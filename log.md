@@ -2,6 +2,25 @@
 
 > 這份檔案在每個可驗證、可回退的儲存點更新。回退前需保留使用者原有的未提交變更。
 
+## CP-079 — fork 改名 GridLens TW（只改顯示名稱）
+
+- 時間：2026-10-14 16:00 +08:00
+- 狀態：已完成（只在 fork `kayla162/gridlens-tw`，未送回原專案）
+- 分支：`fork/gridlens-name`（從 CP-078 的 `681b82e` 開）
+- 起點：fork 改名為 `gridlens-tw`，顯示名稱跟著改成 GridLens TW。
+
+### 做了什麼
+
+- 網頁：分頁標題、側欄品牌（字母改為 G）、favicon（改畫 G）。
+- API 文件標題 `GridLens TW API`、預設帳密警告訊息、各啟動檔的視窗標題與顯示文字。
+- README、PUBLIC_OFFLINE_SERVING、SERVING、SPEC、SYSTEM_CARD、DATA_DICTIONARY 的標題；README 註明原專案與原名。
+- 刻意不改：指令 `powerquery`、環境變數 `POWERQUERY_*`、套件名稱、程式內部 docstring、評測報告產生器
+  （改了要重產報告圖）、`docs/TEAM_4_ROLES.md`（團隊分工當時的紀錄）、log.md 的歷史儲存點。
+
+- 驗收：`uv run ruff format --check .`、`uv run ruff check .` 通過；`uv run pytest -q` → 1122 passed、1 skipped；
+  `node --check app.js` 通過；本機預覽確認分頁標題、側欄、API 文件標題與 favicon。
+- 回退方式：`git revert` 本 commit。只會改回顯示名稱，程式行為與資料不受影響。
+
 ## CP-078 — README 補上即時發電與目前所有功能
 
 - 時間：2026-10-14 15:20 +08:00

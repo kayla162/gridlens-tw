@@ -1,4 +1,4 @@
-# PowerQuery TW 公開離線服務
+# GridLens TW 公開離線服務
 
 ## 架構
 
@@ -8,7 +8,7 @@
 訪客瀏覽器
   -> Tailscale Funnel HTTPS 8443
   -> http://127.0.0.1:8766
-  -> PowerQuery TW（offline）
+  -> GridLens TW（offline）
 ```
 
 原本的本機服務仍使用 `http://127.0.0.1:8765/`。LH 專案使用的 HTTPS 443 與本機 8000 不會被變更。

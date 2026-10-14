@@ -67,7 +67,7 @@ def _reset_offline_runtime(client: TestClient) -> dict[str, object]:
 def test_health_stats_and_static_frontend(client: TestClient) -> None:
     home = client.get("/")
     assert home.status_code == 200
-    assert "PowerQuery TW" in home.text
+    assert "GridLens TW" in home.text
     assert "default-src 'self'" in home.headers["content-security-policy"]
     for view in ("query", "overview", "data", "settings", "docs"):
         assert f'data-view="{view}"' in home.text

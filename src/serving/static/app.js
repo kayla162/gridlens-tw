@@ -238,7 +238,7 @@
     });
     byId("pageTitle").textContent = meta[0];
     byId("pageSubtitle").textContent = meta[1];
-    document.title = meta[0] + "｜PowerQuery TW";
+    document.title = meta[0] + "｜GridLens TW";
     setSidebarOpen(false, false);
     workspace.scrollTop = 0;
     if (!options || options.focus !== false) window.setTimeout(function () { byId(meta[2]).focus(); }, 0);

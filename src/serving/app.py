@@ -362,7 +362,7 @@ def create_app(
 ) -> FastAPI:
     assets = (static_dir or Path(__file__).with_name("static")).resolve()
     application = FastAPI(
-        title="PowerQuery TW API",
+        title="GridLens TW API",
         version="0.3.0",
         description="台電開放資料的可信任 Text2SQL 查詢介面",
         docs_url=None,

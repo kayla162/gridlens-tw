@@ -1,4 +1,4 @@
-# PowerQuery TW 使用方式
+# GridLens TW 使用方式
 
 ## 啟動
 
