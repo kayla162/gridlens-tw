@@ -10,7 +10,7 @@
 > GridLens TW 是本 fork 的名稱，原專案為 [lee851104/text2sql_project](https://github.com/lee851104/text2sql_project)（原名 PowerQuery TW）。
 > 程式內部仍沿用原本的名稱：指令 `powerquery`、環境變數 `POWERQUERY_*`、套件 `powerquery-tw`。
 
-![GridLens TW 查詢中心：問「2026年7月20日出力前五名機組」，回 5 筆結果、類別比較長條圖與明細表](readme_pic.png)
+![GridLens TW 即時發電面板：綠燈與最新時段、各類型淨發電量與裝置容量、通訊異常機組數，以及今日每 10 分鐘的各類型出力趨勢](readme_pic.png)
 
 ## 為什麼做這個
 
