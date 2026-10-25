@@ -28,6 +28,8 @@
 - 驗收：Python 3.12.10；`ruff format --check`、`ruff check` 通過；`pytest -q` → **1285 passed，沒有排除任何測試**；
   離線評測與既有報告逐欄相同。
 - 回退方式：`git revert` 本 commit（會回到 3.11 也能跑、但防護靜默失效的狀態）。
+- CI 第一次真的跑起來（fork 之前沒啟用 Actions）：Python 3.12.3 上雙引號防護正常；另外抓到 RT-3b 的兩項 Ollama runtime
+  測試要 `openai` 套件，CI 只裝 dev extra 而失敗，比照 `test_llm.py` 改成沒有 `openai` 時 `importorskip`。
 
 ## CP-083 — 日期區間不再靜默變成問第一天
 
