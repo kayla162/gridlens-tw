@@ -43,3 +43,18 @@ providers:
     # 把這裡改成 false 再試 —— 那是格式保證的退路，不是安全的退路。
     structured_output: true
     temperature: 0
+
+  # 本機的 Ollama（https://ollama.com），不需要 API key，也不連外網。
+  # 用法：`ollama pull qwen3:8b`，再設環境變數 POWERQUERY_LLM_PROVIDER=ollama 啟動服務。
+  # 換模型用 OLLAMA_MODEL。Ollama 的 OpenAI 相容端點支援 json_schema 輸出格式。
+  ollama:
+    api: chat_completions
+    base_url: http://127.0.0.1:11434/v1
+    requires_api_key: false
+    api_key_env: OLLAMA_API_KEY
+    model_env: OLLAMA_MODEL
+    default_model: qwen3:8b
+    structured_output: true
+    temperature: 0
+    # 本機模型慢：這台筆電上 qwen3:8b 生成一句即時 SQL 實測約 2 分鐘。
+    request_timeout_seconds: 300

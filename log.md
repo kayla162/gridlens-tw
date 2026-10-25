@@ -23,6 +23,103 @@
 - 驗收：`ruff format --check`、`ruff check` 通過；`pytest -q` → 1148 passed（同一項本機 SQLite 測試已排除）；
   離線評測與既有報告逐欄相同。
 - 回退方式：`git revert` 本 commit。
+## CP-082 — RT-2：用 d006010 回補歷史發電量
+
+- 時間：2026-10-25 +08:00
+- 狀態：已完成
+- 分支：`feat/rt2-history-backfill`（從 `feat/rt3b-realtime-query` @ `f39de0b` 開，RT-3b 的查詢路徑要一起改）
+- 規格：`docs/superpowers/specs/2026-10-25-realtime-history-design.md`
+- 起點：RT-1 §13 留下的問題。經使用者同意下載一次 `d006010`（196,169,535 bytes）實測。
+
+### 實測推翻的前提
+
+- **晚約四個月**：Last-Modified 2026-09-30，內容是 2026-03-01～05-31。RT-1 規格以為它能補「收集器沒在跑的時段」，
+  其實補的是收集器啟動以前，兩者不重疊；中間的空檔補不回來。
+- 只有 153 條序列（即時 204），沒有民營電廠與購電彙總列 —— 類型合計是新的語意陷阱。
+- 2026-04-01 整天重複一次（值相同）；開頭有 UTF-8 BOM（第一次匯入就因此被拒收，已修）。
+- `抽蓄發電` 從不為負，是放電，對到即時的「儲能」。
+
+### 做了什麼
+
+- `src/ingest/realtime/history.py`（新）：串流解析（每條序列每個時段一個 float，約 20 MB）、結構驗證與拒收代碼、
+  重複／衝突／無法解析／期間外計數、gzip 封存（內容定址）、人工對照、寫入每日彙總、重放、下載、狀態摘要。
+- `src/ingest/realtime/store.py`：schema 2，新增 `fact_rt_unit_daily_history`、`fact_rt_history_day`、
+  `meta_rt_history_import`；`v_rt_daily` 依取樣點數在即時與歷史之間取一份（一樣多取即時），欄位不變。
+- `rebuild` 重放歷史封存；收集器啟動時補上封存了、還沒匯入的檔案；`status` 顯示歷史期間。
+- CLI：`python -m ingest.realtime history import <檔案>`、`history download`（收集器在跑時拒絕，結束碼 3）。
+- `taipower_align/realtime_history_units.csv`（新，153 列）：109 條與即時是同一部機組、44 條只有歷史；
+  依據寫在 `basis`。`風力,中港` 可能是即時的 `台中港`，名稱對不上，標註待人工確認。
+- `taipower_align/realtime_units.csv`：新增 44 個只出現在 d006010 的機組歸屬（已除役的火力與核能歸電廠；
+  台電自建太陽光電與風力比照 `v_re_generation` 標 shared）。
+- RT-3b 查詢：
+  - 「YYYY年M月」「M月D日到M月D日」的發電量 → `rt_period_energy`；共用的 `extract_entities` 會把日期區間
+    靜默變成第一天，即時路徑自己解析。
+  - 新揭露 `RT_HISTORY_SOURCE`、`RT_HISTORY_PARTIAL_SCOPE`、`RT_PERIOD_GAPS`；整段沒資料 `RT_NO_DATA_FOR_DAY`。
+  - 「現在」只算最新時段裡出現的機組與類型（`核三#1` 在機組表裡，但不會被說成現在有在發電）。
+  - 問過去的日子或期間不再揭露「收集器停止／落後」。
+- 文件：SERVING（歷史回補、指令、檔案）、REALTIME_INGEST（實測更正）、README、SYSTEM_CARD、ATTRIBUTION（資料集 37331）、
+  coverage.yaml 的限制說明。
+
+### 實測
+
+- 真實檔案匯入 12 秒：2,048,976 筆、153 條序列全部有對照、92 天，重複 22,032、衝突 0；封存 8.0 MB。
+  再匯入一次不做事；`rebuild` 從封存重建後結果相同。
+- 「2026年4月台中#5發電量」→ 261,778.9 MWh（30 天、完整度 100%）；「2026年5月風力發了多少度電」→ 附部分範圍揭露；
+  「2026年7月台中#5發電量」→ `RT_NO_DATA_FOR_DAY` 並說明兩段資料各涵蓋哪裡；「現在台中#1」→ 只剩歷史資料。
+- 網頁：「2026年4月風力發了多少度電」顯示期間、歷史來源、部分範圍與估算四項揭露。
+
+- 驗收：`ruff format --check`、`ruff check`、`node --check app.js` 通過；`pytest -q` → 1268 passed（新增 `test_realtime_history.py` 28 項；`test_readonly_db.py` 那一項是這台機器 SQLite 的既有問題，已排除）。
+- 回退方式：`git revert` 本分支的 commit。schema 回到 1，收集器下次啟動時自動從封存重建（歷史封存留在磁碟上，不會被讀）。
+
+## CP-081 — RT-3b：用中文查即時資料，可接本機 Ollama
+
+- 時間：2026-10-25 +08:00
+- 狀態：已完成
+- 分支：`feat/rt3b-realtime-query`（從 `main` @ `9988103` 開）
+- 規格：`docs/superpowers/specs/2026-10-25-realtime-query-design.md`（RT-1 §8.5 的 15 項逐項對應在 §9）
+- 起點：即時資料只畫在總覽頁面板上；查詢中心問「現在風力發多少」「今天太陽能發了幾度」答不出來，
+  「今天…度」還會被 `PEAK_SUM_ACROSS_DAYS` 當成跨日加總尖峰擋掉。
+
+### 做了什麼
+
+- `src/text2sql/realtime_query.py`（新）：
+  - **分流看用詞**：強時間詞（現在、今天、昨天⋯）配上出力／機組／類型；弱的（目前、最新）只配出力或發電。
+    黃金題庫的「哪一些機組目前維修中」「資料最新一天的尖峰負載」照舊走歷史快照。日期問句只有在即時資料期間內才接。
+  - **規則路由** 9 種意圖（現在：單機／類型／各類型／前 N／異常／電廠；今天：發電量／最高出力；某天：發電量）。
+    規則沒模型化的用詞（最低、平均、比較、趨勢⋯）不硬套，交給 LLM，沒有 LLM 就 `RT_CLARIFY`。
+  - **自己的守門**：`SqlGuard` 換成只認 `v_rt_*` 的 allowlist；混用 `power.db` 檢視 → `RT_CROSS_DATABASE`。
+  - **權限**：每個 `v_rt_*` 包成「機組鍵 IN（可見鍵）」子查詢，可見鍵沿用 `realtime_scope.visible_unit_keys()`；
+    電廠名冊不一致或帳號電廠解析不了 → `RT_SCOPE_MISMATCH`，不會退回全部可見。
+  - **揭露**：資料時間一律附；落後／收集器停止、品質警告、彙總或未定列、估算發電量、完整度 < 90%、
+    儲能相抵、今天未過完、收集開始以前、電廠帳號範圍。
+  - **名稱對不上就說**：指名的機組（例如已除役的 `台中#1`）或類型（`核能`）不在即時資料 → `RT_NOT_IN_REALTIME`
+    並建議同前綴的機組，不改答全系統合計。`台中6號機` 視同 `台中#6`；「環保停機」不會連「計劃停機」一起撈。
+- `src/text2sql/realtime_prompt.py`（新）：即時路徑的 LLM prompt；時間在這裡就解析好，不讓模型寫 `date('now')`。
+- `src/text2sql/pipeline.py`：`realtime` 分支放在 `SemanticGuard` 之前（§8.5 第 9 點）。
+- `src/text2sql/llm.py`：剝掉 `<think>…</think>` 與 ```json 圍欄再解析（推理模型的輸出）。
+- `src/serving/runtime.py`、`configs/llm.yaml`：
+  - 新增 `ollama` provider（OpenAI 相容 chat completions、`requires_api_key: false`、`qwen3:8b`、逾時 300 秒）；
+    `POWERQUERY_LLM_PROVIDER` 環境變數優先於 llm.yaml，預設仍是 `gmi`，沒裝 Ollama 的機器行為不變。
+  - 不需要 key 的 provider 用佔位值，`RuntimeManager` 不會把它當成被移除的憑證而丟掉線上 runtime。
+  - provider 可以有自己的 `request_timeout_seconds`。
+- `src/serving/app.py`：即時答案的出處是 `d006001` 與資料時間（即時資料不在受控資料版本裡）；`/api/coverage` 帶 `realtime`。
+- `src/serving/corpus_learning.py`：查 `v_rt_*` 的 SQL 一律不進語料（`realtime_query`）。
+- `configs/coverage.yaml`：加三個即時檢視；兩條限制改寫成「收集開始以前的火力與核能發電量」「兩週以前比日更細的時間粒度」；
+  電價、碳排、分用戶用電的 `absent` 涵蓋 `v_rt_*`。前端涵蓋說明列出即時資料的起始日與最新時段。
+- 測試：`test_realtime_query.py`（53）、`test_realtime_query_service.py`（9）、`test_realtime_benchmark.py`（40，
+  `benchmarks/realtime_questions.json` 39 題，固定封存＋固定現在，全部要過）；coverage 不變式擴充到兩個資料庫。
+- 文件：SERVING（新增「用中文查即時資料」與本機 LLM）、README、SYSTEM_CARD、ATTRIBUTION、lineage。
+
+### 實測
+
+- 真實快照（`python -m ingest.realtime once`，2026-10-25 21:50）：各類型、單機、前 N、歲修、環保停機、電廠、今天發電量都答得出；
+  電廠帳號（台中）只看到本廠與 shared。
+- 網頁 + Ollama `qwen3:8b`：「現在燃煤機組出力最低的是哪一部」約 150 秒後回 `台中#7`（環保停機、0 MW），附資料時間與收集器停止揭露，
+  語料學習標「已忽略（realtime_query）」。本機模型慢是硬體限制，規則接得住的題目不打 LLM。
+- 離線評測與既有報告逐欄相同（意圖 100%、執行 100%、語意陷阱 97.8%、端到端 100%）。
+
+- 驗收：`ruff format --check`、`ruff check`、`node --check app.js` 通過；`pytest -q` → 1240 passed（`test_readonly_db.py` 那一項在這台機器的 SQLite 上本來就失敗，與本次無關，已排除）。
+- 回退方式：`git revert` 本分支的 commit。即時問句會回到原本的路徑（被既有守門拒答或澄清），面板不受影響。
 
 ## CP-080 — 建庫 schema 納入資料版本 id（修 CP-039 的設計缺口）
 

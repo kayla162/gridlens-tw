@@ -43,7 +43,7 @@ uv run powerquery --json "天然氣機組共有幾台？"
 
 ## 即時資料收集器
 
-> RT-1 階段：收集器只負責收資料，查詢頁與 API 要到 RT-3 才查得到這些資料。設計見[即時機組發電量設計規格](superpowers/specs/2026-09-24-realtime-ingest-design.md)。
+> 收集器只負責收資料；總覽頁的面板（RT-3a）與查詢中心的即時問句（RT-3b，見下方「[用中文查即時資料](#用中文查即時資料)」）唯讀使用它。設計見[即時機組發電量設計規格](superpowers/specs/2026-09-24-realtime-ingest-design.md)。
 
 收集器是獨立的常駐程式，每 10 分鐘向台電抓一次「各機組發電量即時資訊」（`d006001`）。原始回應先 gzip 封存到 `data/realtime/archive/`，再寫進 `data/processed/realtime.db`。它和網頁服務互不相干：重啟服務不影響收集，收集器也不必跟著服務一起啟動。每小時的維護（重新套用人工決定、對帳、彙總與清除）若出錯只會記錄，不會中斷抓取。
 
@@ -60,6 +60,8 @@ uv run python -m ingest.realtime status    # 健康狀態；加 --json 給程式
 uv run python -m ingest.realtime once      # 立刻抓一次、做一次維護就結束
 uv run python -m ingest.realtime rebuild   # 從封存重建 realtime.db（收集器必須先停）
 uv run python -m ingest.realtime stop      # 要求收集器停止，最多等 60 秒
+uv run python -m ingest.realtime history import <d006010.json>  # 匯入歷史（收集器必須先停）
+uv run python -m ingest.realtime history download               # 下載最新 d006010（約 200 MB）再匯入
 ```
 
 `status` 的結束碼：0 正常、1 落後超過 30 分鐘、2 收集器沒在跑或資料庫不存在。`run`／`once`／`rebuild` 遇到未預期的錯誤時，會以繁體中文印出原因並以結束碼 1 結束；`once` 這一次抓取失敗時也以結束碼 1 結束。結束碼 3 表示已有另一份收集器拿著鎖，啟動批次檔把它當成正常停止，不會重啟。設定檔有誤時，每個指令都會印出「設定錯誤」並以結束碼 1 結束。
@@ -73,12 +75,23 @@ uv run python -m ingest.realtime stop      # 要求收集器停止，最多等 6
 | `data/processed/realtime.db` | 10 分鐘明細（保留 14 天）、每日估算發電量（永久）、缺口紀錄 |
 | `logs/realtime-collector-*.log` | 收集器的執行紀錄，由收集器自己寫入（批次檔不轉存輸出） |
 | `taipower_align/realtime_units.csv` | 每條序列的人工決定：個別或彙總、屬於哪座電廠 |
+| `data/realtime/history/archive/` | 匯入過的 `d006010` 原檔（gzip），重建時一併重放 |
+| `taipower_align/realtime_history_units.csv` | `d006010` 序列 → 即時機組的人工對照 |
 
 `data/` 與 `logs/` 都不進版控。
 
 ### 升級
 
 停止收集器 → 更新程式 → 重新啟動收集器（schema 版本不符時會自動從封存重建）→ 重啟網頁服務。修改 `realtime_units.csv` 不需要重建，收集器每小時會自動套用；如果決定檔或電廠檔壞了（例如用 Excel 另存成非 UTF-8），只會記一則警告，繼續使用上一份好的決定。
+
+### 歷史回補（d006010）
+
+台電的「各機組過去發電量」（`d006010`）每月更新一次，涵蓋約三個月，實測**晚約四個月**（2026-09-30 更新的檔案是 2026-03-01～05-31）。所以它補的是收集器啟動以前的日子，不會和即時收集重疊；兩者之間的空檔補不回來。每月匯入一次就能把歷史往後延。
+
+- 匯入只存每日彙總，並封存原檔；`rebuild` 會連歷史一起重放。重複匯入同一份檔案不會有任何變化。
+- 同一天同一部機組兩邊都有時，取樣點數多的為準，一樣多取即時。
+- `d006010` 沒有民營電廠與購電彙總列：問「四月風力發了多少度」只會是台電自有的那部分，答案會附上這個限制。
+- 設計見 [RT-2 規格](superpowers/specs/2026-10-25-realtime-history-design.md)。
 
 ### 資料治理
 
@@ -119,9 +132,43 @@ uv run python -m ingest.realtime stop      # 要求收集器停止，最多等 6
 | 訪客（`POWERQUERY_ANONYMOUS_QUERY_SCOPE=all`） | 全部 |
 | 訪客（`denied`） | 只有狀態列，沒有數字 |
 
-- 面板不經過 Text2SQL；查詢中心目前**還查不到**即時資料。
+- 面板不經過 Text2SQL，用寫死的 SQL；查詢中心的即時問句見下一節。
 - 收集器沒在跑時，面板照常顯示最後一筆，並標出「收集器目前沒有在執行」。網頁服務不會啟動或停止收集器。
 - API：`GET /api/health` 的 `realtime` 欄位只有狀態，任何人都看得到；`GET /api/realtime/overview` 回傳面板數字，套用上表的權限。電廠帳號遇到兩邊電廠名冊不一致時回 409 `RT_SCOPE_MISMATCH`；`realtime.db` 讀不出來時回 503。
+
+## 用中文查即時資料
+
+問句帶「現在、即時、此刻、剛剛、今天、今日、昨天、昨日、前天」，或「目前、最新」加上出力／發電，就改查 `realtime.db`，
+不經過歷史快照的守門與路由。例：
+
+- 現在風力發多少電？／現在各類型發電量／現在台中#6出力多少？／現在出力最高的前 5 部機組
+- 現在哪些機組在歲修？／現在哪些機組通訊異常？／現在台中發電廠出力多少？
+- 今天太陽能估計發了多少度電？／今天大潭CC#8最高出力／昨天燃煤發電量
+- 匯入 `d006010` 之後：2026年4月台中#5發電量／2026年4月1日到4月10日燃氣發電量
+
+規則：
+
+- **分流看用詞，不看機組名**：兩邊有約 21 個同名機組（例如 `台中#1`）。「哪一些機組目前維修中」「資料最新一天的尖峰負載」
+  沒有出力用詞，照舊查歷史快照。
+- **只查 `v_rt_*`**：同一句 SQL 混用 `power.db` 的檢視回 `RT_CROSS_DATABASE`（兩邊的機組名稱沒有對照）。
+- **權限與面板相同**：電廠帳號只看到自己電廠與 shared 的機組，歸屬未定的看不到；兩邊電廠名冊不一致回 `RT_SCOPE_MISMATCH`。
+- **答案一定附資料時間**，另依情況揭露：落後或收集器停止、品質警告、彙總／未定列、發電量是估算（10 分鐘瞬間值 ÷ 6）、
+  資料完整度低於 90%、儲能與儲能負載相抵、今天還沒過完、問到收集開始以前（`RT_BEFORE_FIRST_DAY`）。
+- **指名的機組或類型不在即時資料裡**（例如已除役的 `台中#1`、`核能`）回 `RT_NOT_IN_REALTIME` 並建議相近名稱，不會改答全系統合計。
+- 規則接不住的問法（最低、平均、比較、趨勢⋯）交給 LLM；離線模式回 `RT_CLARIFY` 並給例句。
+- 即時 SQL **不進語料學習**（結果每 10 分鐘就變）。`/api/coverage` 的 `realtime` 欄位列出即時資料的起始日與最新時段。
+
+### 本機 LLM（Ollama）
+
+不連外網、不需要 API key 的 LLM：
+
+1. 安裝 [Ollama](https://ollama.com)，`ollama pull qwen3:8b`。
+2. `uv sync --extra online`（OpenAI 相容的 client）。
+3. 設環境變數 `POWERQUERY_LLM_PROVIDER=ollama` 再啟動服務；換模型用 `OLLAMA_MODEL`。
+
+`auto` 模式下 Ollama 視為已設定，所以 runtime 是 `online`；規則接得住的題目照樣不打 LLM。本機模型慢（這台筆電上
+`qwen3:8b` 生成一句即時 SQL 約 2 分鐘，逾時設 300 秒）；Ollama 沒在跑時 LLM 那一步失敗，規則與澄清照常運作。
+公開服務仍強制離線。
 
 ## 資料管理登入
 

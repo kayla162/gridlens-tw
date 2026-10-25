@@ -1204,8 +1204,14 @@ def create_app(
 
         service = current_runtime()
         views, limitations = load_coverage_document(COVERAGE_CONFIG_PATH)
+        realtime_engine = getattr(service.pipeline, "realtime", None)
         try:
-            data = describe_coverage(service.database, views=views, limitations=limitations)
+            data = describe_coverage(
+                service.database,
+                views=views,
+                limitations=limitations,
+                realtime=realtime_engine.coverage() if realtime_engine is not None else None,
+            )
         except sqlite3.Error as error:
             raise HTTPException(status_code=503, detail="目前無法讀取資料涵蓋範圍。") from error
         return {"success": True, "data": data}
@@ -1411,10 +1417,26 @@ def create_app(
                 return dict(fallback)
         if response["success"] and isinstance(response.get("data"), dict):
             tables = [str(table) for table in response["data"].get("tables", ())]
+            realtime_answer = isinstance(response["data"].get("realtime"), dict)
             try:
-                if data_snapshot is None:
+                if realtime_answer:
+                    # 即時資料不在受控資料版本裡（RT-1 規格 §3.1），出處是收集器的資料時間。
+                    provenance = {
+                        "database_version": "realtime",
+                        "database_sha256": None,
+                        "data_sources": [
+                            {
+                                "dataset": "d006001",
+                                "title": "台電各機組發電量即時資訊",
+                                "data_time": response["data"]["realtime"].get("data_time"),
+                                "views": tables,
+                            }
+                        ],
+                    }
+                elif data_snapshot is None:
                     raise ValueError("data snapshot unavailable")
-                provenance = data_provenance(tables, data_snapshot)
+                else:
+                    provenance = data_provenance(tables, data_snapshot)
             # KeyError 也接住：出處是查詢結果的補充說明，組不出來就降級成「不明」，
             # 不該讓一個已經成功的查詢變成 500。
             except (DataManagementError, HTTPException, KeyError, OSError, ValueError):
