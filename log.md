@@ -2,6 +2,54 @@
 
 > 這份檔案在每個可驗證、可回退的儲存點更新。回退前需保留使用者原有的未提交變更。
 
+## CP-082 — RT-2：用 d006010 回補歷史發電量
+
+- 時間：2026-10-25 +08:00
+- 狀態：已完成
+- 分支：`feat/rt2-history-backfill`（從 `feat/rt3b-realtime-query` @ `f39de0b` 開，RT-3b 的查詢路徑要一起改）
+- 規格：`docs/superpowers/specs/2026-10-25-realtime-history-design.md`
+- 起點：RT-1 §13 留下的問題。經使用者同意下載一次 `d006010`（196,169,535 bytes）實測。
+
+### 實測推翻的前提
+
+- **晚約四個月**：Last-Modified 2026-09-30，內容是 2026-03-01～05-31。RT-1 規格以為它能補「收集器沒在跑的時段」，
+  其實補的是收集器啟動以前，兩者不重疊；中間的空檔補不回來。
+- 只有 153 條序列（即時 204），沒有民營電廠與購電彙總列 —— 類型合計是新的語意陷阱。
+- 2026-04-01 整天重複一次（值相同）；開頭有 UTF-8 BOM（第一次匯入就因此被拒收，已修）。
+- `抽蓄發電` 從不為負，是放電，對到即時的「儲能」。
+
+### 做了什麼
+
+- `src/ingest/realtime/history.py`（新）：串流解析（每條序列每個時段一個 float，約 20 MB）、結構驗證與拒收代碼、
+  重複／衝突／無法解析／期間外計數、gzip 封存（內容定址）、人工對照、寫入每日彙總、重放、下載、狀態摘要。
+- `src/ingest/realtime/store.py`：schema 2，新增 `fact_rt_unit_daily_history`、`fact_rt_history_day`、
+  `meta_rt_history_import`；`v_rt_daily` 依取樣點數在即時與歷史之間取一份（一樣多取即時），欄位不變。
+- `rebuild` 重放歷史封存；收集器啟動時補上封存了、還沒匯入的檔案；`status` 顯示歷史期間。
+- CLI：`python -m ingest.realtime history import <檔案>`、`history download`（收集器在跑時拒絕，結束碼 3）。
+- `taipower_align/realtime_history_units.csv`（新，153 列）：109 條與即時是同一部機組、44 條只有歷史；
+  依據寫在 `basis`。`風力,中港` 可能是即時的 `台中港`，名稱對不上，標註待人工確認。
+- `taipower_align/realtime_units.csv`：新增 44 個只出現在 d006010 的機組歸屬（已除役的火力與核能歸電廠；
+  台電自建太陽光電與風力比照 `v_re_generation` 標 shared）。
+- RT-3b 查詢：
+  - 「YYYY年M月」「M月D日到M月D日」的發電量 → `rt_period_energy`；共用的 `extract_entities` 會把日期區間
+    靜默變成第一天，即時路徑自己解析。
+  - 新揭露 `RT_HISTORY_SOURCE`、`RT_HISTORY_PARTIAL_SCOPE`、`RT_PERIOD_GAPS`；整段沒資料 `RT_NO_DATA_FOR_DAY`。
+  - 「現在」只算最新時段裡出現的機組與類型（`核三#1` 在機組表裡，但不會被說成現在有在發電）。
+  - 問過去的日子或期間不再揭露「收集器停止／落後」。
+- 文件：SERVING（歷史回補、指令、檔案）、REALTIME_INGEST（實測更正）、README、SYSTEM_CARD、ATTRIBUTION（資料集 37331）、
+  coverage.yaml 的限制說明。
+
+### 實測
+
+- 真實檔案匯入 12 秒：2,048,976 筆、153 條序列全部有對照、92 天，重複 22,032、衝突 0；封存 8.0 MB。
+  再匯入一次不做事；`rebuild` 從封存重建後結果相同。
+- 「2026年4月台中#5發電量」→ 261,778.9 MWh（30 天、完整度 100%）；「2026年5月風力發了多少度電」→ 附部分範圍揭露；
+  「2026年7月台中#5發電量」→ `RT_NO_DATA_FOR_DAY` 並說明兩段資料各涵蓋哪裡；「現在台中#1」→ 只剩歷史資料。
+- 網頁：「2026年4月風力發了多少度電」顯示期間、歷史來源、部分範圍與估算四項揭露。
+
+- 驗收：`ruff format --check`、`ruff check`、`node --check app.js` 通過；`pytest -q` → 1268 passed（新增 `test_realtime_history.py` 28 項；`test_readonly_db.py` 那一項是這台機器 SQLite 的既有問題，已排除）。
+- 回退方式：`git revert` 本分支的 commit。schema 回到 1，收集器下次啟動時自動從封存重建（歷史封存留在磁碟上，不會被讀）。
+
 ## CP-081 — RT-3b：用中文查即時資料，可接本機 Ollama
 
 - 時間：2026-10-25 +08:00

@@ -60,6 +60,8 @@ uv run python -m ingest.realtime status    # 健康狀態；加 --json 給程式
 uv run python -m ingest.realtime once      # 立刻抓一次、做一次維護就結束
 uv run python -m ingest.realtime rebuild   # 從封存重建 realtime.db（收集器必須先停）
 uv run python -m ingest.realtime stop      # 要求收集器停止，最多等 60 秒
+uv run python -m ingest.realtime history import <d006010.json>  # 匯入歷史（收集器必須先停）
+uv run python -m ingest.realtime history download               # 下載最新 d006010（約 200 MB）再匯入
 ```
 
 `status` 的結束碼：0 正常、1 落後超過 30 分鐘、2 收集器沒在跑或資料庫不存在。`run`／`once`／`rebuild` 遇到未預期的錯誤時，會以繁體中文印出原因並以結束碼 1 結束；`once` 這一次抓取失敗時也以結束碼 1 結束。結束碼 3 表示已有另一份收集器拿著鎖，啟動批次檔把它當成正常停止，不會重啟。設定檔有誤時，每個指令都會印出「設定錯誤」並以結束碼 1 結束。
@@ -73,12 +75,23 @@ uv run python -m ingest.realtime stop      # 要求收集器停止，最多等 6
 | `data/processed/realtime.db` | 10 分鐘明細（保留 14 天）、每日估算發電量（永久）、缺口紀錄 |
 | `logs/realtime-collector-*.log` | 收集器的執行紀錄，由收集器自己寫入（批次檔不轉存輸出） |
 | `taipower_align/realtime_units.csv` | 每條序列的人工決定：個別或彙總、屬於哪座電廠 |
+| `data/realtime/history/archive/` | 匯入過的 `d006010` 原檔（gzip），重建時一併重放 |
+| `taipower_align/realtime_history_units.csv` | `d006010` 序列 → 即時機組的人工對照 |
 
 `data/` 與 `logs/` 都不進版控。
 
 ### 升級
 
 停止收集器 → 更新程式 → 重新啟動收集器（schema 版本不符時會自動從封存重建）→ 重啟網頁服務。修改 `realtime_units.csv` 不需要重建，收集器每小時會自動套用；如果決定檔或電廠檔壞了（例如用 Excel 另存成非 UTF-8），只會記一則警告，繼續使用上一份好的決定。
+
+### 歷史回補（d006010）
+
+台電的「各機組過去發電量」（`d006010`）每月更新一次，涵蓋約三個月，實測**晚約四個月**（2026-09-30 更新的檔案是 2026-03-01～05-31）。所以它補的是收集器啟動以前的日子，不會和即時收集重疊；兩者之間的空檔補不回來。每月匯入一次就能把歷史往後延。
+
+- 匯入只存每日彙總，並封存原檔；`rebuild` 會連歷史一起重放。重複匯入同一份檔案不會有任何變化。
+- 同一天同一部機組兩邊都有時，取樣點數多的為準，一樣多取即時。
+- `d006010` 沒有民營電廠與購電彙總列：問「四月風力發了多少度」只會是台電自有的那部分，答案會附上這個限制。
+- 設計見 [RT-2 規格](superpowers/specs/2026-10-25-realtime-history-design.md)。
 
 ### 資料治理
 
@@ -131,6 +144,7 @@ uv run python -m ingest.realtime stop      # 要求收集器停止，最多等 6
 - 現在風力發多少電？／現在各類型發電量／現在台中#6出力多少？／現在出力最高的前 5 部機組
 - 現在哪些機組在歲修？／現在哪些機組通訊異常？／現在台中發電廠出力多少？
 - 今天太陽能估計發了多少度電？／今天大潭CC#8最高出力／昨天燃煤發電量
+- 匯入 `d006010` 之後：2026年4月台中#5發電量／2026年4月1日到4月10日燃氣發電量
 
 規則：
 

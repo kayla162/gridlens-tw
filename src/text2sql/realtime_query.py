@@ -145,6 +145,28 @@ _NOTE_SUFFIX = re.compile(r"\(註\d+\)")
 # 問句裡看起來像機組名的片段：`台中#1`、`大潭CC#7`、`台中1號機`（先轉成 `台中#1`）。
 _UNIT_TOKEN = re.compile(r"([\u4e00-\u9fffA-Za-z&]{1,10}#\d+)")
 _UNIT_ORDINAL = re.compile(r"(\d+)號機")
+# 「2026年4月1日到5月10日」：共用的 extract_entities 只認得第一天，會靜默變成問一天。
+_DAY_RANGE = re.compile(
+    r"(?P<y1>\d{4})年(?P<m1>\d{1,2})月(?P<d1>\d{1,2})日?\s*(?:到|至|~|～|-)\s*"
+    r"(?:(?P<y2>\d{4})年)?(?:(?P<m2>\d{1,2})月)?(?P<d2>\d{1,2})日?"
+)
+
+
+def day_range(question: str) -> tuple[str, str] | None:
+    found = _DAY_RANGE.search(
+        question.translate(str.maketrans("０１２３４５６７８９", "0123456789"))
+    )
+    if found is None:
+        return None
+    year1, month1, day1 = int(found["y1"]), int(found["m1"]), int(found["d1"])
+    year2 = int(found["y2"] or year1)
+    month2 = int(found["m2"] or month1)
+    try:
+        start = date(year1, month1, day1)
+        end = date(year2, month2, int(found["d2"]))
+    except ValueError:
+        return None
+    return (start.isoformat(), end.isoformat()) if start <= end else None
 
 
 class NotInRealtime(Exception):
@@ -195,6 +217,7 @@ class RealtimeQuery:
     # 揭露要知道的事：用到哪些時段、哪些類型、是不是估算。
     slots: tuple[str, str] | None = None
     day: str | None = None
+    period: tuple[str, str] | None = None  # 'YYYY-MM-DD' 起訖（含）
     types: tuple[str, ...] = ()
     energy: bool = False
     expected_samples: int | None = None
@@ -211,6 +234,18 @@ class Catalog:
     first_day: str | None
     rolled_up: frozenset[str]
     day_snapshots: dict[str, tuple[int, int]]  # 日期 → (收到的時段數, 應有時段數)
+    # RT-2：d006010 匯入的日子、即時快照有資料的日子、最新時段裡實際出現的機組與類型。
+    history_days: frozenset[str] = frozenset()
+    snapshot_days: frozenset[str] = frozenset()
+    latest_keys: frozenset[str] = frozenset()
+    latest_types: frozenset[str] = frozenset()
+
+    @property
+    def history_range(self) -> tuple[str, str] | None:
+        return (min(self.history_days), max(self.history_days)) if self.history_days else None
+
+    def has_data(self, day: str) -> bool:
+        return day in self.rolled_up or day in self.snapshot_days
 
     @classmethod
     def read(cls, connection: sqlite3.Connection) -> Catalog:
@@ -234,6 +269,19 @@ class Catalog:
         first_candidates = [day[0] for day in days[:1]]
         if first_snapshot and first_snapshot[0]:
             first_candidates.append(str(first_snapshot[0])[:10])
+        try:
+            history_days = frozenset(
+                row[0] for row in connection.execute("SELECT date FROM fact_rt_history_day")
+            )
+        except sqlite3.OperationalError:  # schema 1 的資料庫還沒有歷史表
+            history_days = frozenset()
+        if history_days:
+            first_candidates.append(min(history_days))
+        latest = connection.execute(
+            """SELECT u.unit_type || '|' || u.unit_name, u.unit_type
+                 FROM fact_rt_unit_10min AS f JOIN dim_rt_unit AS u ON u.id = f.unit_id
+                WHERE f.data_time = (SELECT MAX(data_time) FROM fact_rt_snapshot)"""
+        ).fetchall()
         return cls(
             units=tuple(units),
             names={name: tuple(keys) for name, keys in names.items()},
@@ -245,8 +293,17 @@ class Catalog:
                 )
             },
             first_day=min(first_candidates) if first_candidates else None,
-            rolled_up=frozenset(day[0] for day in days),
+            rolled_up=frozenset(day[0] for day in days) | history_days,
             day_snapshots={day[0]: (int(day[1]), int(day[2])) for day in days},
+            history_days=history_days,
+            snapshot_days=frozenset(
+                row[0]
+                for row in connection.execute(
+                    "SELECT DISTINCT substr(data_time, 1, 10) FROM fact_rt_snapshot"
+                )
+            ),
+            latest_keys=frozenset(row[0] for row in latest),
+            latest_types=frozenset(row[1] for row in latest),
         )
 
     def unit_keys(self, question: str) -> tuple[str, ...]:
@@ -347,10 +404,26 @@ class RealtimeRouter:
         self.today = today
         self.now_slot_count = now_slot_count
 
-    def _target(self, question: str) -> tuple[str, str, tuple[object, ...], tuple[str, ...]]:
-        """(kind, WHERE fragment, params, types) for the unit／plant／type the question names."""
+    def _target(
+        self, question: str, *, current: bool
+    ) -> tuple[str, str, tuple[object, ...], tuple[str, ...]]:
+        """(kind, WHERE fragment, params, types) for the unit／plant／type the question names.
+
+        `current` 是問「現在」：只算最新時段裡真的出現的機組與類型。d006010 匯入後，已除役的機組
+        （例如 `台中#1`、`核三#2`）也在機組表裡，但不能把它們說成現在有在發電。
+        """
 
         keys = self.catalog.unit_keys(question)
+        if current and keys and self.catalog.latest_keys:
+            live = tuple(key for key in keys if key in self.catalog.latest_keys)
+            if not live:
+                names = "、".join(dict.fromkeys(key.split("|", 1)[1] for key in keys))
+                raise NotInRealtime(
+                    "這部機組不在最新的即時資料裡"
+                    "（可能已除役，只剩 d006010 歷史資料；可以改問某一天）",
+                    names,
+                )
+            keys = live
         plant = (
             self.catalog.plant(question) if any(s in question for s in _PLANT_SUFFIXES) else None
         )
@@ -363,10 +436,13 @@ class RealtimeRouter:
             # 指名了機組卻對不上：答全系統合計就是答非所問（例如已除役的台中#1）。
             raise NotInRealtime("即時資料沒有這部機組", token, self.catalog.similar_units(token))
         requested = self.catalog.requested_types(question)
+        known = (
+            self.catalog.latest_types
+            if current and self.catalog.latest_types
+            else frozenset(self.catalog.types)
+        )
         present = tuple(
-            unit_type
-            for unit_type in self.catalog.types_in(question)
-            if unit_type in self.catalog.types
+            unit_type for unit_type in self.catalog.types_in(question) if unit_type in known
         )
         if requested and not present:
             raise NotInRealtime("即時資料目前沒有這個發電類型", "、".join(requested))
@@ -374,12 +450,16 @@ class RealtimeRouter:
             return "type", f'"機組類型" IN ({_in(present)})', present, present
         return "all", "", (), ()
 
-    def route(self, question: str, *, day: str | None) -> RealtimeQuery | None:
+    def route(
+        self, question: str, *, day: str | None, period: tuple[str, str] | None = None
+    ) -> RealtimeQuery | None:
         text = _normal(question)
         if _matched(UNROUTED_WORDS, text):
             return None
-        kind, where, params, types = self._target(text)
+        kind, where, params, types = self._target(text, current=day is None and period is None)
         energy = bool(_matched(ENERGY_WORDS, text))
+        if period is not None:
+            return self._period(period, kind, where, params, types)
         if day is not None:
             if not energy and not _matched(PEAK_WORDS, text):
                 energy = True  # 「昨天風力」沒有說量什麼時，一天最有意義的量是發電量。
@@ -513,6 +593,37 @@ class RealtimeRouter:
             types=types,
             energy=True,
             expected_samples=count,
+        )
+
+    # --- 一段期間（RT-2：d006010 讓「四月發了多少度」答得出來）-------------------------
+
+    def _period(self, period, kind, where, params, types) -> RealtimeQuery:
+        label = (
+            '"機組類型", "機組名稱"'
+            if kind == "unit"
+            else ('"電廠", "機組類型"' if kind == "plant" else '"機組類型"')
+        )
+        group = '"機組鍵", "機組類型", "機組名稱"' if kind == "unit" else label
+        conditions = ['"日期" BETWEEN ? AND ?']
+        values: list[object] = [period[0], period[1]]
+        if where:
+            conditions.append(where)
+            values.extend(params)
+        sql = (
+            f'SELECT {label}, round(SUM("估算發電量_MWh"), 1) AS "估算發電量_MWh", '
+            'COUNT(DISTINCT "日期") AS "有資料天數", SUM("取樣點數") AS "取樣點數", '
+            'SUM("應有點數") AS "應有點數", '
+            'round(1.0 * SUM("取樣點數") / SUM("應有點數"), 4) AS "資料完整度" '
+            f"FROM v_rt_daily WHERE {' AND '.join(conditions)} GROUP BY {group} "
+            'ORDER BY "估算發電量_MWh" DESC LIMIT 50'
+        )
+        return RealtimeQuery(
+            "rt_period_energy",
+            sql,
+            tuple(values),
+            period=period,
+            types=types,
+            energy=True,
         )
 
     # --- 某一天 -----------------------------------------------------------------------
@@ -677,30 +788,38 @@ class RealtimeQueryEngine:
 
         lexical = looks_realtime(question)
         explicit_day = None
+        explicit_period: tuple[str, str] | None = None
         if not lexical:
             if not asks_energy_on_a_day(question):
                 return None
-            explicit_day = extract_entities(question).explicit_date
-            if explicit_day is None:
+            entities = extract_entities(question)
+            explicit_period = day_range(question)
+            explicit_day = None if explicit_period else entities.explicit_date
+            if explicit_day is None and explicit_period is None and entities.date_range:
+                explicit_period = (entities.date_range.start, entities.date_range.end)
+            if explicit_day is None and explicit_period is None:
                 return None
+        dated = explicit_day is not None or explicit_period is not None
         started = perf_counter()
         now = self.clock()
         if not self.config.database.is_file():
-            return None if explicit_day else _unavailable("尚未建立 realtime.db")
+            return None if dated else _unavailable("尚未建立 realtime.db")
         try:
             status = read_status(config=self.config, now=now)
         except Exception as error:  # noqa: BLE001 - 即時狀態壞掉不能讓查詢 500。
-            return None if explicit_day else _unavailable(type(error).__name__)
+            return None if dated else _unavailable(type(error).__name__)
         if not status.get("available") or status.get("latest_data_time") is None:
-            return None if explicit_day else _unavailable(str(status.get("state")))
+            return None if dated else _unavailable(str(status.get("state")))
         try:
             catalog = self._read_catalog()
         except sqlite3.Error as error:
-            return None if explicit_day else _unavailable(type(error).__name__)
-        if explicit_day is not None:
-            # 日期問句只有落在即時資料期間內才是我們的：否則讓既有守門照舊回答或拒答。
+            return None if dated else _unavailable(type(error).__name__)
+        if dated:
+            # 日期問句只有落在即時資料（含 d006010 歷史）期間內才是我們的；
+            # 否則讓既有守門照舊回答或拒答。
             today = local_date(now).isoformat()
-            if catalog.first_day is None or not catalog.first_day <= explicit_day <= today:
+            start, end = explicit_period or (explicit_day, explicit_day)
+            if catalog.first_day is None or end < catalog.first_day or start > today:
                 return None
 
         scope = (
@@ -726,7 +845,7 @@ class RealtimeQueryEngine:
                 error="即時資料與查詢資料庫的電廠名冊不一致，暫時無法提供電廠帳號的即時查詢。",
                 severity="refuse",
             )
-        return self._answer(context, explicit_day, llm, llm_enabled, max_attempts)
+        return self._answer(context, explicit_day, explicit_period, llm, llm_enabled, max_attempts)
 
     def coverage(self) -> dict[str, Any]:
         """What realtime questions can reach right now, for /api/coverage."""
@@ -746,6 +865,8 @@ class RealtimeQueryEngine:
             "first_day": catalog.first_day,
             "latest_data_time": status.get("latest_data_time"),
             "detail_days": self.config.raw_days,
+            "live_first_day": min(catalog.snapshot_days, default=None),
+            "history_range": list(catalog.history_range) if catalog.history_range else None,
         }
 
     def _read_catalog(self) -> Catalog:
@@ -773,10 +894,25 @@ class RealtimeQueryEngine:
             return explicit
         return None
 
+    def _no_data(self, context: _Context, asked: str) -> PipelineResponse:
+        history = context.catalog.history_range
+        covered = f"即時收集從 {min(context.catalog.snapshot_days, default='（尚無）')} 開始"
+        if history:
+            covered += f"；台電 d006010 歷史資料涵蓋 {history[0]}～{history[1]}"
+        return PipelineResponse(
+            False,
+            data={"trace": context.trace},
+            error_code="RT_NO_DATA_FOR_DAY",
+            error=f"{asked} 沒有即時或歷史發電資料（{covered}）。中間的空檔目前補不回來。",
+            severity="refuse",
+            evidence={"asked": asked, "history": history},
+        )
+
     def _answer(
         self,
         context: _Context,
         explicit_day: str | None,
+        explicit_period: tuple[str, str] | None,
         llm: LLMProtocol | None,
         llm_enabled: bool,
         max_attempts: int,
@@ -789,7 +925,7 @@ class RealtimeQueryEngine:
                 data={"trace": context.trace},
                 error_code="RT_BEFORE_FIRST_DAY",
                 error=(
-                    f"即時資料從 {first_day} 開始收集，{day} 沒有即時資料。"
+                    f"即時資料（含 d006010 歷史資料）從 {first_day} 開始，{day} 沒有資料。"
                     "收集器在電腦開機、登入後才會開始抓取，錯過的時段目前補不回來。"
                 ),
                 severity="refuse",
@@ -804,6 +940,15 @@ class RealtimeQueryEngine:
                 error=f"{day} 還沒到，沒有即時資料。",
                 severity="refuse",
             )
+        if day is not None and day < context.today and not context.catalog.has_data(day):
+            return self._no_data(context, day)
+        period = explicit_period
+        if period is not None:
+            period = (max(period[0], first_day or period[0]), min(period[1], context.today))
+            if not any(
+                context.catalog.has_data(item) for item in _days_between(period[0], period[1])
+            ):
+                return self._no_data(context, f"{period[0]}～{period[1]}")
 
         started = perf_counter()
         elapsed = len([slot for slot in day_slots(context.today, 10) if slot <= context.latest])
@@ -814,7 +959,7 @@ class RealtimeQueryEngine:
             now_slot_count=max(elapsed, 1),
         )
         try:
-            routed = router.route(_normal(context.question), day=day)
+            routed = router.route(_normal(context.question), day=day, period=period)
         except NotInRealtime as missing:
             return PipelineResponse(
                 False,
@@ -996,7 +1141,31 @@ class RealtimeQueryEngine:
             items.append({"code": code, "reason": reason, "evidence": evidence})
 
         status = context.status
-        if query.day is None:
+        catalog = context.catalog
+        if query.period is not None:
+            days = _days_between(*query.period)
+            history = [day for day in days if day in catalog.history_days]
+            missing = [day for day in days if not catalog.has_data(day)]
+            add(
+                "RT_DATA_TIME",
+                f"資料期間 {query.period[0]}～{query.period[1]}（台灣時間），共 {len(days)} 天。",
+                period=list(query.period),
+            )
+            if history:
+                add(
+                    "RT_HISTORY_SOURCE",
+                    f"其中 {len(history)} 天來自台電 d006010 歷史資料（每月更新、約晚四個月），"
+                    "不是收集器即時抓到的。",
+                    days=len(history),
+                )
+            if missing:
+                add(
+                    "RT_PERIOD_GAPS",
+                    f"期間內有 {len(missing)} 天完全沒有資料（{missing[0]} 起），"
+                    "加總只含有資料的日子。",
+                    missing_days=len(missing),
+                )
+        elif query.day is None:
             add(
                 "RT_DATA_TIME",
                 f"資料時間 {context.latest}（台灣時間）；台電每 10 分鐘更新一次。",
@@ -1006,7 +1175,17 @@ class RealtimeQueryEngine:
             received = context.catalog.day_snapshots.get(query.day)
             note = f"，當天收到 {received[0]}／{received[1]} 個時段" if received else ""
             add("RT_DATA_TIME", f"資料日期 {query.day}（台灣時間）{note}。", day=query.day)
-        if status.get("state") == "stale":
+            if query.day in catalog.history_days and query.day not in catalog.snapshot_days:
+                add(
+                    "RT_HISTORY_SOURCE",
+                    "這天的數字來自台電 d006010 歷史資料（每月更新、約晚四個月），"
+                    "不是收集器即時抓到的。",
+                )
+        # 落後與收集器停止只跟「現在／今天」有關；問過去某一天或一段期間時說這個只是雜訊。
+        about_now = query.period is None and (query.day is None or query.day == context.today)
+        if not about_now:
+            pass
+        elif status.get("state") == "stale":
             lag = status.get("lag_minutes")
             minutes = round(lag) if isinstance(lag, int | float) else "?"
             add("RT_STALE", f"資料落後 {minutes} 分鐘（最新時段 {context.latest}）。")
@@ -1036,6 +1215,18 @@ class RealtimeQueryEngine:
                     "不能當成單一機組排名。",
                     grains=sorted(buckets),
                 )
+        history_used = (
+            query.period is not None
+            and any(day in catalog.history_days for day in _days_between(*query.period))
+        ) or (query.day is not None and query.day in catalog.history_days)
+        if history_used and "機組名稱" not in columns:
+            # 與 RENEWABLE_SELF_BUILT_ONLY 同型的陷阱：d006010 沒有民營電廠與購電彙總列，
+            # 類型合計看起來正常，其實只是台電自有的那一部分。
+            add(
+                "RT_HISTORY_PARTIAL_SCOPE",
+                "d006010 歷史資料只有台電自有與部分機組（沒有民營電廠、購電太陽能與風力等彙總列），"
+                "類型或電廠合計會比同類型的即時合計小很多，不能當成全國數字。",
+            )
         energy = query.energy or any("發電量_MWh" in str(column) for column in columns)
         if energy:
             add(
@@ -1088,9 +1279,12 @@ class RealtimeQueryEngine:
         return items
 
     def _warned_snapshots(self, query: RealtimeQuery) -> int:
-        if query.slots is None and query.day is None:
+        if query.period is not None:
+            start, end = f"{query.period[0]} 00:00", f"{query.period[1]} 23:50"
+        elif query.slots is None and query.day is None:
             return 0
-        start, end = query.slots or (f"{query.day} 00:00", f"{query.day} 23:50")
+        else:
+            start, end = query.slots or (f"{query.day} 00:00", f"{query.day} 23:50")
         uri = f"{self.config.database.resolve().as_uri()}?mode=ro"
         try:
             connection = sqlite3.connect(uri, uri=True)
@@ -1106,6 +1300,13 @@ class RealtimeQueryEngine:
                 connection.close()
         except sqlite3.Error:
             return 0
+
+
+def _days_between(start: str, end: str) -> list[str]:
+    first, last = date.fromisoformat(start), date.fromisoformat(end)
+    return [
+        (first + timedelta(days=offset)).isoformat() for offset in range((last - first).days + 1)
+    ]
 
 
 def _trace(trace: list[dict[str, Any]], stage: str, started: float, **details: Any) -> None:
