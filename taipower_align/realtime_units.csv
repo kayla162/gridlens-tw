@@ -96,7 +96,7 @@ unit_type,unit_name,grain,access_scope,plant_id,note
 太陽能,星股光(註10),unit,shared,,不屬於單一電廠，標 shared
 太陽能,其它購電太陽能,bucket,shared,,彙總列，不屬於單一電廠，標 shared
 風力,觀園,unit,shared,,不屬於單一電廠，標 shared
-風力,台中港,unit,shared,,不屬於單一電廠，標 shared
+風力,台中港,unit,shared,,台中港區風力發電站整站（17141 發電站編號 7、場址 9＋10、35000 kW；即時裝置容量 35.0 MW）；不屬於單一電廠，標 shared
 風力,王功,unit,shared,,不屬於單一電廠，標 shared
 風力,彰工,unit,shared,,不屬於單一電廠，標 shared
 風力,雲麥,unit,shared,,不屬於單一電廠，標 shared
@@ -236,7 +236,7 @@ unit_type,unit_name,grain,access_scope,plant_id,note
 燃氣,通霄CC#5,unit,plant,21,名稱前綴對應通霄發電廠；只出現在 d006010（已除役或停役）
 燃料油,核一Gas1,unit,plant,32,名稱前綴對應核一廠；只出現在 d006010（已除役或停役）
 燃料油,核一Gas2,unit,plant,32,名稱前綴對應核一廠；只出現在 d006010（已除役或停役）
-風力,中港,unit,shared,,台電自建再生能源場站，只出現在 d006010；比照 v_re_generation 不受管，標 shared
+風力,中港,unit,shared,,台中港區風力發電站場址 9「台中港1」（26000 kW）的部分序列，只出現在 d006010；與即時「台中港」（整站 35 MW）範圍不同，依據見 realtime_history_units.csv；比照 v_re_generation 標 shared
 風力,中火,unit,shared,,台電自建再生能源場站，只出現在 d006010；比照 v_re_generation 不受管，標 shared
 風力,大潭,unit,shared,,台電自建再生能源場站，只出現在 d006010；比照 v_re_generation 不受管，標 shared
 風力,恆春,unit,shared,,台電自建再生能源場站，只出現在 d006010；比照 v_re_generation 不受管，標 shared
