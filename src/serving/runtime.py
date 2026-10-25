@@ -3,29 +3,39 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from pathlib import Path
 from threading import RLock
 from typing import Any, Literal, cast
 
 import yaml
 
+from ingest.realtime.config import load_config as load_realtime_config
 from ingest.validate import PROJECT_ROOT
 from text2sql.corpus import column_value_conflicts, column_values
 from text2sql.db import ReadOnlySQLite
 from text2sql.llm import DisabledLLM, OpenAILLM
 from text2sql.pipeline import Text2SQLPipeline
+from text2sql.realtime_query import RealtimeQueryEngine
 from text2sql.scope_guard import ScopeGuard
 from text2sql.semantic_guard import SemanticGuard
 from text2sql.sql_guard import SqlGuard
 
 RuntimeMode = Literal["offline", "online", "auto"]
 ActiveRuntimeMode = Literal["offline", "online"]
-RuntimeSource = Literal["offline", "memory", "environment", "injected"]
+RuntimeSource = Literal["offline", "memory", "environment", "injected", "local"]
 
 _UNSET = object()
+LOGGER = logging.getLogger(__name__)
+# 不需要 key 的 provider（本機 Ollama）用的佔位值。OpenAI SDK 一定要有 api_key 才肯建 client，
+# 對方根本不看它；它不是祕密，也不會被當成使用者設定的憑證。
+LOCAL_API_KEY = "local-no-key"
+PROVIDER_ENV = "POWERQUERY_LLM_PROVIDER"
 
 
 @dataclass(frozen=True)
@@ -49,6 +59,7 @@ class ServiceRuntime:
     api_key_env: str = "OPENAI_API_KEY"
     requested_mode: RuntimeMode = "auto"
     credential_fingerprint: bytes | None = field(default=None, repr=False)
+    requires_api_key: bool = True
 
 
 def _yaml(path: Path) -> dict[str, Any]:
@@ -113,13 +124,17 @@ def _clean_api_key(api_key: str | None) -> str | None:
     return api_key.strip() or None
 
 
-def _credential(api_key: str | None, api_key_env: str) -> tuple[str | None, RuntimeSource]:
+def _credential(
+    api_key: str | None, api_key_env: str, *, requires_key: bool = True
+) -> tuple[str | None, RuntimeSource]:
     explicit = _clean_api_key(api_key)
     if explicit:
         return explicit, "memory"
     environment = os.getenv(api_key_env, "").strip()
     if environment:
         return environment, "environment"
+    if not requires_key:
+        return LOCAL_API_KEY, "local"
     return None, "offline"
 
 
@@ -140,6 +155,31 @@ def _provider_settings(llm_config: dict[str, Any], provider: str) -> dict[str, A
     return {**llm_config, **block}
 
 
+def _selected_provider(llm_config: dict[str, Any]) -> str:
+    """`POWERQUERY_LLM_PROVIDER` wins over llm.yaml, so a local model needs no file edit."""
+
+    override = os.getenv(PROVIDER_ENV, "").strip()
+    return override or str(llm_config.get("provider", "openai"))
+
+
+def _realtime_engine(
+    root: Path, guard_config: dict[str, Any], clock: Callable[[], datetime] | None
+) -> RealtimeQueryEngine | None:
+    """The realtime branch; a broken realtime config only disables realtime questions."""
+
+    try:
+        config = load_realtime_config(root)
+    except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError):
+        LOGGER.exception("即時收集設定讀取失敗，即時問句停用")
+        return None
+    return RealtimeQueryEngine(
+        config,
+        max_rows=int(guard_config["sql"]["max_rows"]),
+        timeout_seconds=float(guard_config["sql"]["timeout_seconds"]),
+        clock=clock,
+    )
+
+
 def build_runtime(
     *,
     database: Path | None = None,
@@ -147,6 +187,7 @@ def build_runtime(
     mode: RuntimeMode = "auto",
     model: str | None = None,
     api_key: str | None = None,
+    realtime_clock: Callable[[], datetime] | None = None,
 ) -> ServiceRuntime:
     """Build one immutable runtime without retaining a supplied API key.
 
@@ -171,11 +212,12 @@ def build_runtime(
     scope_guard = _optional_scope_guard(database)
 
     # provider 決定去哪裡拿 key、拿哪個環境變數，所以要先解析它才問得出憑證。
-    provider = str(llm_config.get("provider", "openai"))
+    provider = _selected_provider(llm_config)
     settings = _provider_settings(llm_config, provider)
     api_key_env = str(settings.get("api_key_env", "OPENAI_API_KEY"))
+    requires_api_key = bool(settings.get("requires_api_key", True))
 
-    key, key_source = _credential(api_key, api_key_env)
+    key, key_source = _credential(api_key, api_key_env, requires_key=requires_api_key)
     active_mode: ActiveRuntimeMode = (
         "online" if requested_mode == "online" or (requested_mode == "auto" and key) else "offline"
     )
@@ -187,7 +229,8 @@ def build_runtime(
         use_environment=requested_mode != "offline",
     )
 
-    request_timeout = float(llm_config.get("request_timeout_seconds", 30))
+    # provider 可以有自己的逾時：本機模型（Ollama）在一般筆電上生成一句 SQL 要一兩分鐘。
+    request_timeout = float(settings.get("request_timeout_seconds", 30))
     temperature = settings.get("temperature")
     llm = (
         OpenAILLM(
@@ -223,6 +266,7 @@ def build_runtime(
         sites=sites,
         semantic_guard=semantic_guard,
         scope_guard=scope_guard,
+        realtime=_realtime_engine(root, guard_config, realtime_clock),
         max_attempts=int(llm_config["max_attempts"]),
         top_k=int(retriever_config["top_k"]),
         ngram_min=int(ngram["min"]),
@@ -252,6 +296,7 @@ def build_runtime(
             if active_mode == "online" and key is not None
             else None
         ),
+        requires_api_key=requires_api_key,
     )
 
 
@@ -271,6 +316,7 @@ class RuntimeManager:
         "_provider",
         "_root",
         "_api_key_env",
+        "_requires_api_key",
     )
 
     def __init__(
@@ -303,6 +349,7 @@ class RuntimeManager:
             self._model = runtime.model.strip()
             self._provider = runtime.provider
             self._api_key_env = runtime.api_key_env
+            self._requires_api_key = runtime.requires_api_key
             self._default_mode = _normalise_mode(default_mode or runtime.requested_mode)
             self._offline_runtime = runtime if runtime.mode == "offline" else None
             self._online_runtime = runtime if runtime.mode == "online" else None
@@ -329,6 +376,7 @@ class RuntimeManager:
         self._model = initial.model
         self._provider = initial.provider
         self._api_key_env = initial.api_key_env
+        self._requires_api_key = initial.requires_api_key
         self._default_mode = selected_default
         self._offline_runtime = initial if initial.mode == "offline" else None
         self._online_runtime = initial if initial.mode == "online" else None
@@ -354,7 +402,7 @@ class RuntimeManager:
     def _current_credential(self) -> tuple[str | None, RuntimeSource]:
         if self._api_key:
             return self._api_key, "memory"
-        return _credential(None, self._api_key_env)
+        return _credential(None, self._api_key_env, requires_key=self._requires_api_key)
 
     def _drop_stale_online_runtime(self) -> None:
         """Release cached clients as soon as their credential is no longer current."""
@@ -539,6 +587,7 @@ class RuntimeManager:
             self._model = candidate_model
             self._api_key = candidate_key
             self._provider = candidate.provider
+            self._requires_api_key = candidate.requires_api_key
             if settings_changed:
                 self._offline_runtime = None
                 self._online_runtime = None
@@ -608,6 +657,7 @@ class RuntimeManager:
                 else None
             )
             self._provider = candidate.provider
+            self._requires_api_key = candidate.requires_api_key
             self._active_runtime = candidate
             return candidate
 

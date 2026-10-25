@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from math import isfinite
@@ -137,8 +138,17 @@ def _scalar_param(value: object, index: int) -> object:
     raise ValueError(f"LLM params[{index}] 必須是純量，收到 {type(value).__name__}。")
 
 
+# 推理模型（例如 Ollama 上的 qwen3）會先吐一段 <think>…</think> 才給答案；答案本身也常被包在
+# ```json 圍欄裡、前面還有一句說明。這兩種都先剝掉，剩下的才是要解析的輸出。
+_THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+_JSON_FENCE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL | re.IGNORECASE)
+
+
 def parse_generated_query(output: str) -> GeneratedQuery:
-    value = output.strip()
+    value = _THINK_BLOCK.sub("", output).strip()
+    fenced = _JSON_FENCE.search(value)
+    if fenced is not None and not value.startswith("{"):
+        value = fenced.group(1).strip()
     if value.startswith("```"):
         lines = value.splitlines()
         value = "\n".join(lines[1:-1]).strip()
