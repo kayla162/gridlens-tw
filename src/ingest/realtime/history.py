@@ -632,6 +632,82 @@ def download(config: RealtimeConfig, *, opener=None) -> Path:
         temporary.unlink(missing_ok=True)
 
 
+AUTO_STATE_NAME = "auto-check.json"
+
+
+def remote_version(config: RealtimeConfig, *, opener=None) -> str | None:
+    """台電目前那份 d006010 的版本（ETag，沒有就 Last-Modified）；只發 HEAD，不下載。"""
+
+    import urllib.request
+
+    from ingest.realtime.client import USER_AGENT, default_opener
+
+    request = urllib.request.Request(
+        config.history.url, headers={"User-Agent": USER_AGENT}, method="HEAD"
+    )
+    with (opener or default_opener)(request, 60) as response:
+        headers = response.headers
+        return headers.get("ETag") or headers.get("Last-Modified")
+
+
+def _auto_state_path(config: RealtimeConfig) -> Path:
+    return config.root / "history" / AUTO_STATE_NAME
+
+
+def _read_auto_state(config: RealtimeConfig) -> dict[str, str]:
+    try:
+        payload = json.loads(_auto_state_path(config).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {key: str(value) for key, value in payload.items()} if isinstance(payload, dict) else {}
+
+
+def _write_auto_state(config: RealtimeConfig, state: dict[str, str]) -> None:
+    path = _auto_state_path(config)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def auto_import(
+    connection: sqlite3.Connection,
+    config: RealtimeConfig,
+    decisions: Decisions | None,
+    *,
+    now: datetime,
+    opener=None,
+) -> ImportReport | None:
+    """收集器的每日檢查：台電有新版 d006010 才下載匯入；沒到時間、沒有新版時回 None。
+
+    先記下「這次檢查過了」再連網：下載失敗時要隔 `check_hours` 才重試，
+    不能每小時抓一次 200 MB。原始下載檔匯入後就刪掉，位元組留在 gzip 封存裡。
+    """
+
+    hours = config.history.check_hours
+    if hours <= 0:
+        return None
+    state = _read_auto_state(config)
+    checked = state.get("checked_at")
+    if checked:
+        try:
+            if now - datetime.fromisoformat(checked) < timedelta(hours=hours):
+                return None
+        except ValueError:
+            pass
+    state["checked_at"] = utc_iso(now)
+    _write_auto_state(config, state)
+    version = remote_version(config, opener=opener)
+    if not version or version == state.get("imported_version"):
+        return None
+    source = download(config, opener=opener)
+    try:
+        report = import_file(connection, source, config, decisions, now=now)
+    finally:
+        source.unlink(missing_ok=True)
+    state["imported_version"] = version
+    _write_auto_state(config, state)
+    return report
+
+
 def summary(connection: sqlite3.Connection) -> dict[str, object]:
     """status 用：匯入過幾份、涵蓋哪幾天。"""
 
