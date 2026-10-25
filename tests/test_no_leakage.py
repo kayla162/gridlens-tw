@@ -59,4 +59,6 @@ def test_benchmark_directory_contains_only_expected_versioned_json() -> None:
         "eval_questions.json",
         "trap_questions.json",
         "attack_questions.json",
+        # 即時題（RT-3b）：用固定封存＋固定現在評測，見 tests/test_realtime_benchmark.py。
+        "realtime_questions.json",
     }

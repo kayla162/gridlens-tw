@@ -13,6 +13,7 @@ from text2sql.corpus import load_corpus
 from text2sql.entities import Entities, extract_entities
 from text2sql.llm import (
     RETRYABLE_CATEGORY,
+    DisabledLLM,
     GeneratedQuery,
     LLMProtocol,
     classify_error,
@@ -53,6 +54,21 @@ class SemanticGuardProtocol(Protocol):
     def explain_unanswerable_date(
         self, entities: Entities, *, question: str = ""
     ) -> SemanticDecision | None: ...
+
+
+class RealtimeBranch(Protocol):
+    """The realtime path (`text2sql.realtime_query.RealtimeQueryEngine`); None = not ours."""
+
+    def try_query(
+        self,
+        question: str,
+        *,
+        plant: tuple[int, str] | None,
+        plant_roster: Mapping[int, str] | None,
+        llm: LLMProtocol | None,
+        llm_enabled: bool,
+        max_attempts: int = 3,
+    ) -> PipelineResponse | None: ...
 
 
 class AllowAllSemanticGuard:
@@ -105,6 +121,7 @@ class Text2SQLPipeline:
         column_value_conflicts: Mapping[str, str] | None = None,
         semantic_guard: SemanticGuardProtocol | None = None,
         scope_guard: ScopeGuard | None = None,
+        realtime: RealtimeBranch | None = None,
         max_attempts: int = 3,
         top_k: int = 5,
         ngram_min: int = 2,
@@ -134,6 +151,7 @@ class Text2SQLPipeline:
         self.column_value_conflicts = dict(column_value_conflicts or {})
         self.semantic_guard = semantic_guard or AllowAllSemanticGuard()
         self.scope_guard = scope_guard
+        self.realtime = realtime
         self.max_attempts = max_attempts
         self.top_k = top_k
         self.min_score = min_score
@@ -224,8 +242,41 @@ class Text2SQLPipeline:
             evidence=decision.evidence,
         )
 
+    def _realtime_plant(
+        self, plant: str | None
+    ) -> tuple[tuple[int, str] | None, Mapping[int, str] | None]:
+        """The plant identity the realtime branch scopes by; unresolvable means no rows.
+
+        解析不了（沒有授權對照、帳號的電廠不在名冊）時給一個對不上任何名冊的身分，
+        即時路徑會以 RT_SCOPE_MISMATCH 拒絕 —— 不能因為查不到電廠就退回全部可見。
+        """
+
+        if plant is None:
+            return None, None
+        if self.scope_guard is None:
+            return (-1, plant), {}
+        try:
+            scope = self.scope_guard.catalog.scope_for(plant)
+        except ScopeError:
+            return (-1, plant), {}
+        return (scope.plant_id, scope.plant_name), self.scope_guard.catalog.plant_names_by_id()
+
     def query(self, question: str, *, plant: str | None = None) -> PipelineResponse:
         """Answer ``question``; ``plant`` restricts the result to that plant's own rows."""
+        if self.realtime is not None:
+            # 即時問句在一切既有守門之前分流：NO_UNIT_DETAIL、PEAK_SUM_ACROSS_DAYS 這些是為
+            # v_peak 寫的，留在前面會把「今天風力發了多少度」當成跨日加總尖峰擋掉。
+            realtime_plant, roster = self._realtime_plant(plant)
+            answered = self.realtime.try_query(
+                question,
+                plant=realtime_plant,
+                plant_roster=roster,
+                llm=self.llm,
+                llm_enabled=not isinstance(self.llm, DisabledLLM),
+                max_attempts=self.max_attempts,
+            )
+            if answered is not None:
+                return answered
         trace: list[dict[str, Any]] = []
         with self._corpus_lock:
             corpus = self.corpus

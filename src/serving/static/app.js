@@ -697,6 +697,11 @@
         valueText(counts.units) + " 台機組",
         "燃料別：" + (data.fuels || []).join("、")
       ];
+      var realtime = data.realtime || {};
+      if (realtime.available) {
+        // 即時資料在另一個資料庫，期間跟著收集器走；問句帶「現在、今天、昨天」才查它。
+        facts.push("即時資料 " + valueText(realtime.first_day) + " 起，最新 " + valueText(realtime.latest_data_time));
+      }
       byId("coverageFacts").textContent = facts.join("　·　");
       renderCoverageList(byId("coverageAnswerable"), data.answerable, {
         title: function (item) { return item.title; },
