@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints
 
-from ingest.build_db import build_database
+from ingest.build_db import SCHEMA_VERSION, build_database
 from ingest.validate import PROJECT_ROOT, resolve_configured_paths
 from serving.accounts import (
     Account,
@@ -346,6 +346,15 @@ class DataRollbackRequest(BaseModel):
     ] = None
 
 
+class DataRebuildRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: Annotated[
+        str | None,
+        StringConstraints(strip_whitespace=True, max_length=500),
+    ] = None
+
+
 def _configured_database(root: Path) -> Path:
     return resolve_configured_paths(root)["database"].resolve()
 
@@ -452,6 +461,7 @@ def create_app(
             source_paths=sources,
             initial_database=initial_database,
             build_database=build_candidate,
+            build_schema=SCHEMA_VERSION,
             switch_runtime=switch_managed_runtime,
             allow_self_approval=_self_approval_allowed(),
         )
@@ -1152,6 +1162,20 @@ def create_app(
             with application.state.initialization_lock:
                 application.state.learning_service = None
                 application.state.learning_pipelines = WeakSet()
+        return {"success": True, "data": change}
+
+    @application.post("/api/data/changes/rebuild")
+    def stage_data_rebuild(
+        payload: DataRebuildRequest,
+        principal: ManageMutation,
+    ) -> dict[str, object]:
+        try:
+            change = required_data_manager().stage_rebuild(
+                actor=principal.username,
+                reason=payload.reason or "",
+            )
+        except DataManagementError as error:
+            raise _data_http_error(error) from error
         return {"success": True, "data": change}
 
     @application.post("/api/data/versions/{version}/rollback")

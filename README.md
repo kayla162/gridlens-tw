@@ -113,7 +113,7 @@ flowchart LR
 
 Python＋uv（鎖版本可重現）、SQLite（唯讀開檔；即時資料用 WAL）、sqlglot（語法樹守門）、FastAPI、原生 HTML／CSS／JS（不需 Node）、Plotly.js（鎖版本＋SRI）、自寫字元 n-gram 檢索（離線、不需向量服務）、OpenAI Responses API（僅線上模式）、pytest＋ruff＋GitHub Actions（每個 PR 附合併門檻報告）。
 
-踩過的坑（官方憑證鏈、PowerShell 的 BOM、浮點小計誤判、靜態檔快取、Big5 主控台讀壞開機檔⋯⋯）都記在 [log.md](log.md) 與 [docs/SPEC.md](docs/SPEC.md)。已知未修：資料版本編號不含 schema 版本，見 [SPEC 已知待修](docs/SPEC.md#已知待修)。
+踩過的坑（官方憑證鏈、PowerShell 的 BOM、浮點小計誤判、靜態檔快取、Big5 主控台讀壞開機檔⋯⋯）都記在 [log.md](log.md) 與 [docs/SPEC.md](docs/SPEC.md)。
 
 ## 快速開始
 

@@ -1372,6 +1372,7 @@
     var active = datasetItems.filter(function (item) { return stateBucket(dataItemState(item)) === "active"; }).length;
     byId("activeDatasetCount").textContent = valueText(itemValue(counts, ["active_datasets", "active_files", "active"], active));
     byId("activeDatabaseVersion").textContent = valueText(activeVersion || "—");
+    renderRebuildNotice(data);
     var datasetSelect = byId("datasetName");
     var selectedDataset = datasetSelect.value;
     datasetSelect.replaceChildren(element("option", "", "選擇要新增或替換的資料槽"));
@@ -1401,7 +1402,8 @@
       replace: "替換資料檔",
       remove: "停用資料檔",
       disable: "停用資料檔",
-      rollback: "回退資料庫版本"
+      rollback: "回退資料庫版本",
+      rebuild: "以現行建庫程式重建"
     };
     return labels[value] || String(value || "資料異動");
   }
@@ -1918,6 +1920,81 @@
       managementRequestActive = false;
       if (formElement.isConnected) setFormDisabled(formElement, false);
     });
+  }
+
+  function renderRebuildNotice(data) {
+    var notice = byId("rebuildNotice");
+    notice.hidden = data.rebuild_required !== true;
+    if (notice.hidden) return;
+    var built = data.active_build_schema == null ? "未記錄" : "v" + data.active_build_schema;
+    byId("rebuildNoticeText").textContent = "作用中的資料庫是舊版建庫程式建的（schema " + built +
+      "，現行 v" + data.build_schema + "），新增的資料表與檢視還查不到。重建一樣要經人工核准才上線。";
+  }
+
+  function stageDataRebuild(reasonInput, formElement, feedback) {
+    if (managementRequestActive || !reasonInput.reportValidity()) return;
+    managementRequestActive = true;
+    setFormDisabled(formElement, true);
+    feedback.className = "review-feedback";
+    feedback.textContent = "正在用現行建庫程式建立候選資料庫；目前作用中版本不會立即改變…";
+    feedback.hidden = false;
+    adminMutation("/api/data/changes/rebuild", {
+      method: "POST",
+      body: { reason: reasonInput.value.trim() }
+    }).then(function (payload) {
+      businessData(payload);
+      closeDataChangeDialog();
+      selectManagementTab("changes", { focus: false });
+      announce("重建要求已送交人工審核", false);
+      return refreshDataManagement(false);
+    }).catch(function (error) {
+      feedback.className = "review-feedback error";
+      feedback.textContent = "重建異動未建立：" + error.message;
+      announce(error.message, true);
+    }).finally(function () {
+      managementRequestActive = false;
+      if (formElement.isConnected) setFormDisabled(formElement, false);
+    });
+  }
+
+  function openRebuildDialog(trigger) {
+    dataChangeDialogReturnFocus = trigger || document.activeElement;
+    byId("dataChangeDialogTitle").textContent = "建立重建異動";
+    var body = byId("dataChangeDialogBody");
+    body.replaceChildren();
+    var section = element("section", "dialog-section review-section");
+    section.setAttribute("aria-labelledby", "rebuildReviewTitle");
+    var title = element("h3", "", "送出重建申請");
+    title.id = "rebuildReviewTitle";
+    section.appendChild(title);
+    section.appendChild(element("p", "", "用目前的資料檔、現行建庫程式重建一份候選資料庫。資料檔不變，但查詢結果可能因新 schema 而不同，所以一樣要由另一個帳號核准後才上線。"));
+    var formElement = element("form", "review-form");
+    var label = element("label", "review-field");
+    label.appendChild(element("span", "", "重建原因"));
+    var reason = element("textarea");
+    reason.name = "reason";
+    reason.rows = 3;
+    reason.maxLength = 500;
+    reason.required = true;
+    reason.placeholder = "例如：建庫程式升到新 schema，需要新的資料表";
+    label.appendChild(reason);
+    formElement.appendChild(label);
+    var feedback = element("div", "review-feedback");
+    feedback.hidden = true;
+    feedback.setAttribute("role", "status");
+    formElement.appendChild(feedback);
+    var actions = element("div", "review-actions");
+    var submit = element("button", "review-button", "建立重建異動");
+    submit.type = "submit";
+    actions.appendChild(submit);
+    formElement.appendChild(actions);
+    formElement.addEventListener("submit", function (event) {
+      event.preventDefault();
+      stageDataRebuild(reason, formElement, feedback);
+    });
+    section.appendChild(formElement);
+    body.appendChild(section);
+    openModal(byId("dataChangeDialog"), "closeDataChangeDialog");
   }
 
   function openVersionRollbackDialog(index, trigger) {
@@ -2460,6 +2537,8 @@
     if (changeButton) openDataChangeDialog(Number(changeButton.getAttribute("data-change-index")), changeButton);
     var versionButton = event.target.closest("[data-version-index]");
     if (versionButton) openVersionRollbackDialog(Number(versionButton.getAttribute("data-version-index")), versionButton);
+    var rebuildButton = event.target.closest("#openRebuildDialog");
+    if (rebuildButton) openRebuildDialog(rebuildButton);
     var sourceButton = event.target.closest("[data-source-dataset]");
     if (sourceButton) {
       var dataset = sourceButton.getAttribute("data-source-dataset");

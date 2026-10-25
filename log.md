@@ -2,6 +2,43 @@
 
 > 這份檔案在每個可驗證、可回退的儲存點更新。回退前需保留使用者原有的未提交變更。
 
+## CP-080 — 建庫 schema 納入資料版本 id（修 CP-039 的設計缺口）
+
+- 時間：2026-10-25 +08:00
+- 狀態：已完成
+- 分支：`fix/schema-aware-data-version`（從 `main` @ `9f00f35` 開）
+- 起點：SPEC「已知待修」唯一一條。版本 id 只雜湊來源內容，建庫程式新增資料表後，來源沒變就拿不到新 schema；
+  強制重建又會因 checksum 與版本紀錄不符被當成篡改。
+
+### 做了什麼
+
+- `src/serving/data_management.py`：
+  - `DataManagementService` 新增必填參數 `build_schema`；版本 id ＝ 雜湊（`build_schema` ＋來源內容）。
+    來源 manifest 升為 `powerquery-data-sources-v2` 並記錄 `build_schema`。
+  - 舊版 `-v1` manifest 照原公式驗證，不必遷移；它的 `build_schema` 視為未記錄（`null`）。
+    v1 manifest 不准多帶 `build_schema`，v2 改了 `build_schema` 會讓 checksum 對不上，兩種都 fail closed。
+  - 新增異動類型 `rebuild`（`stage_rebuild`）：用作用中的來源檔、現行建庫程式建候選，照樣 `pending_review`、
+    四眼核准才上線。作用中已是現行 schema 時拒絕（409）。
+  - 啟動時**不自動**換版：只在 `status()` 回報 `active_build_schema`、`build_schema`、`rebuild_required`。
+    建庫程式改了，查詢結果就可能不同，所以跟資料異動一樣要第二個人看過。
+  - 上傳內容與作用中版本相同、只差 schema 時拒絕，要走 rebuild，稽核紀錄才不會把升級記成上傳。
+  - 首次啟動複製既有 `power.db` 時，除了來源雜湊，還要求 `meta_manifest.schema_version` 等於現行版本；
+    舊程式建的檔案改為重建（CP-039 的起點就是這裡）。
+- `src/serving/app.py`：傳入 `build_db.SCHEMA_VERSION`；新增 `POST /api/data/changes/rebuild`。
+- 前端：`rebuild_required` 時在資料管理頁上方顯示提示與「建立重建異動」按鈕；異動清單的動作名稱「以現行建庫程式重建」。
+- `tests/test_database.py`：釘住 `schema.sql` 的雜湊對應 `SCHEMA_VERSION`，改 DDL 沒升版就失敗。
+  只涵蓋 DDL；載入邏輯改變內容時仍要手動升版。
+- 文件：SERVING 補上 API 與升級流程；SPEC「已知待修」改為已修；README 拿掉「已知未修」。
+
+- 回退與相容：既有工作區照常啟動（v1 版本仍驗證通過），只會多一個「需要重建」的提示；
+  核准 rebuild 前查詢行為不變。已核准的 rebuild 可用一般回退流程回到舊版本，回去後提示會再出現。
+- 驗收：`uv run ruff format --check .`、`uv run ruff check .` 通過；`node --check app.js` 通過；
+  `uv run pytest -q` → 1135 passed、1 skipped、1 failed。失敗的是
+  `test_readonly_db.py::test_a_misspelled_column_raises_instead_of_returning_its_own_name`，未修改的 `main` 在這台機器上也一樣失敗
+  （本機 SQLite 允許雙引號字串），與本次無關。新增 12 項資料管理測試、1 項 API 測試、1 項 schema 雜湊測試。
+- 回退方式：`git revert` 本 commit。已經用新程式建立的 v2 版本，舊程式讀不了（manifest schema 不認得），
+  回退前要先把作用中版本切回 v1 版本，或刪掉資料工作區重新 bootstrap。
+
 ## CP-079 — fork 改名 GridLens TW（只改顯示名稱）
 
 - 時間：2026-10-14 16:00 +08:00
