@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
   <meta name="description" content="以自然語言安全查詢、管理與追蹤台電開放資料語料">
   <title>查詢中心｜GridLens TW</title>
-  <link rel="stylesheet" href="/static/app.css?v=20261006">
-  <link rel="stylesheet" href="/static/styles.css?v=20261006">
+  <link rel="stylesheet" href="/static/app.css?v=20261025">
+  <link rel="stylesheet" href="/static/styles.css?v=20261025">
   <script src="https://cdn.plot.ly/plotly-basic-4.0.0.min.js"
           integrity="sha384-pob47bLDprs//iBIQpGg2VYPBbDGMuH6Fyu26Rdf2XvV5y78KBv8pT1xS/5MhP/8"
           crossorigin="anonymous" defer></script>
-  <script src="/static/app.js?v=20261006" defer></script>
+  <script src="/static/app.js?v=20261025" defer></script>
 </head>
 <body>
   <div class="app-shell">
@@ -243,6 +243,7 @@
               <button class="text-button" id="dataLogout" type="button">登出</button>
             </section>
             <div class="credential-warning" id="defaultCredentialWarning" role="note" hidden>目前仍使用示範用預設帳密；正式部署前請用環境變數替換。</div>
+            <div class="credential-warning rebuild-notice" id="rebuildNotice" role="note" hidden><span id="rebuildNoticeText">作用中的資料庫是舊版建庫程式建的。</span><button class="entry-open" id="openRebuildDialog" type="button">建立重建異動</button></div>
 
             <div class="metric-grid management-metrics" aria-label="資料管理摘要">
               <article class="metric-card compact"><div><p>啟用資料檔</p><strong id="activeDatasetCount">—</strong></div></article>

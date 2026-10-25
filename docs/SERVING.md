@@ -183,7 +183,7 @@ $writeHeaders = @{
 | `daily_long_csv` | `daily_long.csv` | 是 | 否 |
 | `outage_csv` | `outage.csv` | 是 | 是 |
 
-上傳上限為 64 MiB。系統會檢查副檔名、UTF-8、NUL、重複／缺少欄位、空資料及跨檔資料品質，再建立候選 SQLite、來源 manifest 與 checksum。上傳、移除和回退都只建立 `pending_review` 變更，不會立刻影響查詢；只有登入者按下人工核准後，才會驗證候選 checksum、原子切換 runtime 與 active pointer。拒絕、建置失敗、舊基線衝突及發布失敗都保留紀錄。
+上傳上限為 64 MiB。系統會檢查副檔名、UTF-8、NUL、重複／缺少欄位、空資料及跨檔資料品質，再建立候選 SQLite、來源 manifest 與 checksum。上傳、移除、回退和重建都只建立 `pending_review` 變更，不會立刻影響查詢；只有登入者按下人工核准後，才會驗證候選 checksum、原子切換 runtime 與 active pointer。拒絕、建置失敗、舊基線衝突及發布失敗都保留紀錄。
 
 適合展示的熱插拔流程：
 
@@ -203,7 +203,10 @@ $writeHeaders = @{
 - `POST /api/data/changes/{change_id}/review`：人工核准或拒絕。
 - `GET /api/data/versions`：不可變的已發布版本。
 - `POST /api/data/versions/{version}/rollback`：建立回退候選；仍需再呼叫 review 才會套用。
+- `POST /api/data/changes/rebuild`：用作用中的來源檔、現行建庫程式建立重建候選；仍需再呼叫 review 才會套用。作用中版本已是現行 schema 時回 409。
 - `GET /api/data/events`：驗證過完整 hash chain 後回傳稽核事件。
+
+資料版本 id 由「來源內容＋建庫程式的 schema 版本（`build_db.SCHEMA_VERSION`）」一起雜湊決定，所以同一組來源用新 schema 建出來是另一個版本，不會被當成篡改。升級程式後，服務照常以原本的作用中版本啟動；`/api/data/status` 的 `rebuild_required` 會變成 `true`（`active_build_schema` 與 `build_schema` 不同；舊版工作區的版本沒有記錄 schema，顯示 `null`），「資料管理」頁上方也會出現提示。按「建立重建異動」後由另一個帳號核准，新的資料表與檢視才會上線。改了 `schema.sql` 一定要把 `SCHEMA_VERSION` 加一，`tests/test_database.py` 會檢查。
 
 執行期工作區位於資料庫旁的 `.powerquery-data/`，包含不可變來源、候選／已發布資料庫、變更 manifest、`active.json`、短暫的 build／mutation／publish journals、append-only `audit.jsonl`、獨立 `audit-head.json` 與錨點永久建立標記。build journal 綁定候選 DB 與確切來源 checksum；mutation journal 確保 staged、failed、rejected 狀態與稽核事件成對恢復；版本檔、核准異動與稽核事件會先落盤，`active.json` 才作為發布的最後 commit point。若程序中途終止，下次 transaction 會從 journal 完成或安全拒絕。稽核事件依操作記錄登入帳號、動作、版本或 checksum 等細節，並以 `previous_hash`／`event_hash` 串接；錨點可偵測整檔遺失、截尾，active revision 也會與發布事件交叉核對。若來源、DB、manifest、指標或稽核歷史遭修改，查詢與所有管理讀取／異動都會 fail closed，而不是默默接受。含 `password`、`secret`、`token`、`credential` 或 `api_key` 等欄位會在稽核邊界遮罩。
 
