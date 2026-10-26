@@ -246,6 +246,7 @@ def build_runtime(
             api=str(settings.get("api", "responses")),
             structured_output=bool(settings.get("structured_output", True)),
             temperature=(None if temperature is None else float(temperature)),
+            extra_body=settings.get("extra_body") or None,
             api_key_env=api_key_env,
             model_env=str(settings.get("model_env", "OPENAI_MODEL")),
             default_model=str(settings.get("default_model", "gpt-5.4-mini")),

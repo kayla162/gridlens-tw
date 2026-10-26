@@ -9,6 +9,7 @@ from threading import RLock
 from time import perf_counter
 from typing import Any, Protocol
 
+from text2sql.answer_checks import check_result, check_sql, coerce_numeric_params
 from text2sql.corpus import load_corpus
 from text2sql.entities import Entities, extract_entities
 from text2sql.llm import (
@@ -380,6 +381,25 @@ class Text2SQLPipeline:
                 prior_sql = generated.sql
                 continue
 
+            if source == "llm":
+                # 安全之外的第二道：看起來正常、其實答錯的寫法（answer_checks 的說明）。
+                started = perf_counter()
+                generated = GeneratedQuery(
+                    generated.sql, coerce_numeric_params(generated.sql, generated.params)
+                )
+                issue = check_sql(generated.sql, generated.params, self.column_values)
+                self._trace(
+                    trace,
+                    "answer_check",
+                    started,
+                    attempt=attempt,
+                    code=issue.code if issue else "OK",
+                )
+                if issue is not None:
+                    prior_error = issue.as_prior_error()
+                    prior_sql = generated.sql
+                    continue
+
             started = perf_counter()
             semantic = self.semantic_guard.check_sql(question, generated, entities)
             self._trace(trace, "semantic_sql_guard", started, attempt=attempt, code=semantic.code)
@@ -410,6 +430,20 @@ class Text2SQLPipeline:
                 self._trace(trace, "execute", started, attempt=attempt, error=prior_error)
                 continue
             self._trace(trace, "execute", started, attempt=attempt, record_count=len(rows))
+            if source == "llm" and attempt < attempts:
+                # 0 筆或剛好被 LIMIT 截斷：還有重試機會就請模型再看一次；最後一次照常回答，
+                # 因為真的可能沒有資料。
+                issue = check_result(
+                    generated.sql,
+                    rows,
+                    asks_top_n=entities.top_n is not None,
+                    max_rows=self.sql_guard.max_rows,
+                )
+                if issue is not None:
+                    self._trace(trace, "result_check", started, attempt=attempt, code=issue.code)
+                    prior_error = issue.as_prior_error()
+                    prior_sql = generated.sql
+                    continue
             disclosures = []
             disclosed_codes: set[str] = set()
             # 期間另外問，因為 check_sql 一次只回一個 decision：再生能源的查詢會先撞上

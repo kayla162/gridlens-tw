@@ -58,3 +58,8 @@ providers:
     temperature: 0
     # 本機模型慢：這台筆電上 qwen3:8b 生成一句即時 SQL 實測約 2 分鐘。
     request_timeout_seconds: 300
+    # 關掉 qwen3 的推理（thinking）：CP-088 的評測裡 7 題推理停不下來，900 秒都寫不完。
+    # Ollama 0.40 的 OpenAI 相容端點認 reasoning_effort: none（think: false 不認）；
+    # 實測同一個問題 161 秒、2432 tokens → 18 秒、327 tokens。
+    extra_body:
+      reasoning_effort: none
