@@ -2,6 +2,26 @@
 
 > 這份檔案在每個可驗證、可回退的儲存點更新。回退前需保留使用者原有的未提交變更。
 
+## CP-087 — 半形 `-` 寫的日期區間也不再變成問第一天
+
+- 時間：2026-10-26 +08:00
+- 狀態：已完成
+- 分支：`fix/day-range-ascii-dash`（從 `main` @ `0693fc6` 開，rebase 到 `927fea6`）
+- 起點：複查 CP-083 時發現 `RANGE_SEPARATOR` 只收全形 `－`／`—`。`2026年4月1日-4月10日`、
+  `2026/4/1-2026/4/10`、`2026-04-01-2026-04-10` 仍回 `explicit_date='2026-04-01'`，問十天拿到一天。
+
+### 做了什麼
+
+- `src/text2sql/entities.py`：`RANGE_SEPARATOR` 加入半形 `-`。它與數字日期分隔符同字，但區間規則要求
+  前面是完整年月日、後面以日結尾，單一的 `2026-04-01` 只有三段，不會被誤認。
+- 下游複查：`router.py` 的 `unit_day`、`daily_ranking` 只在 `explicit_date` 有值時出手，區間時為 `None`；
+  `semantic_guard.py` 只用 `date_range` 起訖。不用改。
+- 測試：`test_entities_aliases.py` 區間題加 6 種 `-` 寫法、反向區間加 1 題 `2026/7/10-2026/7/1`。
+
+- 驗收（Python 3.12.10）：`ruff format --check`、`ruff check` 通過；`pytest -q` → 1294 passed、3 skipped，
+  不用排除任何測試；離線評測摘要與 `main` @ `927fea6` 逐欄相同（只差產出時間）。
+- 回退方式：`git revert` 本 commit。
+
 ## CP-086 — 收集器每天自動檢查並匯入新的 d006010
 
 - 時間：2026-10-25 +08:00
