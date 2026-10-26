@@ -108,7 +108,10 @@ def _month_range(year: int, month: int) -> tuple[DateRange | None, str | None]:
     return DateRange(start, end), None
 
 
-RANGE_SEPARATOR = r"(?:到|至|~|～|－|—)"
+# 半形 `-` 也要收：原本只認全形，「2026年4月1日-4月10日」「2026/4/1-2026/4/10」照樣
+# 靜默變成問第一天。它和數字日期的分隔符同一個字，但區間規則要求前面是完整的年月日、
+# 後面以日結尾，`2026-04-01` 本身只有三段，不會被誤認成區間。
+RANGE_SEPARATOR = r"(?:到|至|~|～|-|－|—)"
 _YEAR_PREFIX = r"(?:(\d{3,4})\s*年|(今年|去年|明年))?"
 _CHINESE_DAY_RANGE = re.compile(
     rf"{_YEAR_PREFIX}\s*({NUMBER_TOKEN})\s*月\s*({NUMBER_TOKEN})\s*日?\s*{RANGE_SEPARATOR}\s*"
