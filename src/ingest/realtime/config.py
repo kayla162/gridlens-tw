@@ -56,6 +56,9 @@ class HistoryConfig:
     # 2026-09 實測一份 196,169,535 bytes（三個月）；上限留兩倍多的餘裕，超過就當成異常。
     max_bytes: int = 500_000_000
     units_csv: Path | None = None  # d006010 序列 → 即時機組的人工對照
+    # 收集器每隔幾小時問一次台電有沒有新的 d006010（HEAD，不下載）；0 表示不自動匯入。
+    # 預設 0：只有 configs/realtime.yaml 明寫才會開，測試與其他設定不會意外下載 200 MB。
+    check_hours: int = 0
 
 
 @dataclass(frozen=True)
@@ -148,6 +151,7 @@ def _history(raw: dict[str, Any], root: Path, paths: dict[str, Any]) -> HistoryC
         timeout_seconds=float(section.get("timeout_seconds", defaults.timeout_seconds)),
         max_bytes=int(section.get("max_bytes", defaults.max_bytes)),
         units_csv=root / mapping if mapping else None,
+        check_hours=int(section.get("check_hours", defaults.check_hours)),
     )
 
 

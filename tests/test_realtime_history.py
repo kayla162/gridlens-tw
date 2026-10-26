@@ -537,3 +537,101 @@ def test_coverage_reports_the_history_range(answered) -> None:
 
     assert coverage["history_range"] == ["2026-04-01", "2026-04-30"]
     assert coverage["first_day"] == "2026-04-01"
+
+
+# --- 每日自動匯入 ---------------------------------------------------------------------
+
+
+class FakeTaipower:
+    """d006010 端點：HEAD 回版本標記，GET 回檔案內容；記下每一次請求。"""
+
+    def __init__(self, payload: bytes, version: str = '"v1"'):
+        self.payload = payload
+        self.version = version
+        self.calls: list[str] = []
+
+    def __call__(self, request, timeout):
+        method = request.get_method()
+        self.calls.append(method)
+        body = b"" if method == "HEAD" else self.payload
+        version = self.version
+
+        class Response(io.BytesIO):
+            headers = {"ETag": version}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                self.close()
+
+        return Response(body)
+
+
+def _auto_config(tmp_path: Path, hours: int = 24) -> RealtimeConfig:
+    config = _config(tmp_path)
+    return dataclasses.replace(
+        config, history=dataclasses.replace(config.history, check_hours=hours)
+    )
+
+
+def _maintain(config: RealtimeConfig, taipower: FakeTaipower, now: datetime) -> None:
+    collector = Collector(config, clock=Clock(now), opener=taipower)
+    with SingleInstanceLock(config.lock_path):
+        collector.startup()
+        collector.maintain(now)
+        collector.shutdown()
+
+
+def test_the_collector_imports_a_new_d006010_once_a_day(tmp_path: Path) -> None:
+    config = _auto_config(tmp_path)
+    taipower = FakeTaipower(_payload("2026-03-01", "2026-03-01", {("燃氣", "大潭CC#1"): 1.0}))
+
+    _maintain(config, taipower, NOW)
+    _maintain(config, taipower, NOW + timedelta(hours=1))  # 還沒過一天：連 HEAD 都不發
+
+    assert taipower.calls.count("GET") == 1
+    assert [row[0] for row in _daily(config)] == ["2026-03-01"]
+    assert not list(config.history_download_dir.glob("*.json")), "原始下載檔匯入後要刪掉"
+
+
+def test_an_unchanged_version_is_not_downloaded_again(tmp_path: Path) -> None:
+    config = _auto_config(tmp_path)
+    taipower = FakeTaipower(_payload("2026-03-01", "2026-03-01", {("燃氣", "大潭CC#1"): 1.0}))
+    _maintain(config, taipower, NOW)
+
+    _maintain(config, taipower, NOW + timedelta(days=1, minutes=1))
+
+    assert taipower.calls == ["HEAD", "GET", "HEAD"]
+
+
+def test_a_new_version_the_next_month_extends_the_history(tmp_path: Path) -> None:
+    config = _auto_config(tmp_path)
+    taipower = FakeTaipower(_payload("2026-03-01", "2026-03-01", {("燃氣", "大潭CC#1"): 1.0}))
+    _maintain(config, taipower, NOW)
+    taipower.payload = _payload("2026-03-01", "2026-03-02", {("燃氣", "大潭CC#1"): 1.0})
+    taipower.version = '"v2"'
+
+    _maintain(config, taipower, NOW + timedelta(days=30))
+
+    assert [row[0] for row in _daily(config)] == ["2026-03-01", "2026-03-02"]
+
+
+def test_auto_import_is_off_unless_configured(tmp_path: Path) -> None:
+    config = _auto_config(tmp_path, hours=0)
+    taipower = FakeTaipower(b"")
+
+    _maintain(config, taipower, NOW)
+
+    assert taipower.calls == []
+
+
+def test_a_failed_download_waits_a_day_instead_of_retrying_every_hour(tmp_path: Path) -> None:
+    config = _auto_config(tmp_path)
+    taipower = FakeTaipower(b'{"not": "d006010"}')
+
+    _maintain(config, taipower, NOW)  # 匯入失敗只記錄，收集照常
+    _maintain(config, taipower, NOW + timedelta(hours=1))
+
+    assert taipower.calls == ["HEAD", "GET"]
+    assert not list(config.history_archive_dir.glob("*.gz"))

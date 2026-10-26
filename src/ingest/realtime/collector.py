@@ -510,6 +510,30 @@ class Collector:
         report = maintenance.run_maintenance(self.connection, now, self.config)
         if report.rolled_up or report.purged:
             LOGGER.info("彙總 %s；清除 %s", list(report.rolled_up), list(report.purged))
+        self._auto_import_history(now)
+
+    def _auto_import_history(self, now: datetime) -> None:
+        """每天問一次台電有沒有新的 d006010；失敗只記錄，收集照常（隔 check_hours 再試）。"""
+        assert self.connection is not None
+        try:
+            imported = history.auto_import(
+                self.connection, self.config, self.decisions, now=now, opener=self.opener
+            )
+        except Exception:
+            LOGGER.exception("自動匯入 d006010 失敗，記錄後繼續收集")
+            return
+        if imported is None:
+            return
+        if imported.skipped:
+            LOGGER.info("台電的 d006010 有新版本標記，但內容與已匯入的相同")
+            return
+        LOGGER.info(
+            "自動匯入 d006010：%s～%s，%d 條序列（%d 條有對照）",
+            imported.start_date,
+            imported.end_date,
+            imported.series,
+            imported.mapped_series,
+        )
 
     def _reload_decisions_if_changed(self) -> None:
         current = self.decisions
