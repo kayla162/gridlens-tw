@@ -188,6 +188,7 @@ def build_runtime(
     model: str | None = None,
     api_key: str | None = None,
     realtime_clock: Callable[[], datetime] | None = None,
+    request_timeout_seconds: float | None = None,
 ) -> ServiceRuntime:
     """Build one immutable runtime without retaining a supplied API key.
 
@@ -230,7 +231,11 @@ def build_runtime(
     )
 
     # provider 可以有自己的逾時：本機模型（Ollama）在一般筆電上生成一句 SQL 要一兩分鐘。
-    request_timeout = float(settings.get("request_timeout_seconds", 30))
+    request_timeout = (
+        float(request_timeout_seconds)
+        if request_timeout_seconds is not None
+        else float(settings.get("request_timeout_seconds", 30))
+    )
     temperature = settings.get("temperature")
     llm = (
         OpenAILLM(
