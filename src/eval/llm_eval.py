@@ -99,12 +99,18 @@ def evaluate(
     database: Path,
     model: str | None = None,
     timeout_seconds: float | None = None,
+    extra_body: dict[str, Any] | None = None,
+    label: str | None = None,
 ) -> dict[str, Any]:
     items = json.loads(BENCHMARK.read_text(encoding="utf-8"))
     rule_hits = _rule_misses(database, items)
     os.environ[PROVIDER_ENV] = provider
     runtime = build_runtime(
-        database=database, mode="online", model=model, request_timeout_seconds=timeout_seconds
+        database=database,
+        mode="online",
+        model=model,
+        request_timeout_seconds=timeout_seconds,
+        extra_body=extra_body,
     )
     results: list[dict[str, Any]] = []
     for item in items:
@@ -147,6 +153,8 @@ def evaluate(
         "provider": provider,
         "model": runtime.model,
         "timeout_seconds": timeout_seconds,
+        "label": label,
+        "extra_body": getattr(runtime.pipeline.llm, "extra_body", None),
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "questions": len(items),
         "measured": len(measured),
@@ -163,11 +171,14 @@ def evaluate(
 
 def write_reports(report: dict[str, Any], directory: Path) -> tuple[Path, Path]:
     directory.mkdir(parents=True, exist_ok=True)
-    name = f"llm_eval_{report['provider']}"
+    name = f"llm_eval_{report['provider']}" + (f"_{report['label']}" if report.get("label") else "")
     json_path = directory / f"{name}.json"
     json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     lines = [
-        f"# LLM 路徑評測：{report['provider']}（{report['model']}）",
+        f"# LLM 路徑評測：{report['provider']}（{report['model']}）"
+        + (f"・{report['label']}" if report.get("label") else ""),
+        "",
+        f"> provider 額外參數：`{json.dumps(report.get('extra_body') or {}, ensure_ascii=False)}`",
         "",
         f"> 產生時間 {report['generated_at']}。題庫 `benchmarks/llm_questions.json`："
         "只收離線規則接不住、但資料答得出來的問題；以 gold SQL 的執行結果比對（不看欄名與順序）。",
@@ -207,6 +218,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--model", default=None)
     parser.add_argument(
+        "--extra-body",
+        default=None,
+        help='覆寫 provider 的 extra_body（JSON），例如 "{}" 把 ollama 的推理打開',
+    )
+    parser.add_argument("--label", default=None, help="報告檔名後綴，例如 thinking")
+    parser.add_argument(
         "--timeout",
         type=float,
         default=None,
@@ -216,7 +233,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, default=PROJECT_ROOT / "reports")
     args = parser.parse_args(argv)
     report = evaluate(
-        args.provider, database=args.database, model=args.model, timeout_seconds=args.timeout
+        args.provider,
+        database=args.database,
+        model=args.model,
+        timeout_seconds=args.timeout,
+        extra_body=json.loads(args.extra_body) if args.extra_body is not None else None,
+        label=args.label,
     )
     json_path, markdown_path = write_reports(report, args.out)
     print(
