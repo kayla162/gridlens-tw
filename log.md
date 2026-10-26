@@ -2,6 +2,35 @@
 
 > 這份檔案在每個可驗證、可回退的儲存點更新。回退前需保留使用者原有的未提交變更。
 
+## CP-085 — 要求 Python 3.12：SQL 雙引號防護在 3.11 上一直是靜默失效
+
+- 時間：2026-10-25 +08:00
+- 狀態：已完成
+- 分支：`fix/require-python-312`（從 `main` 開）
+- 起點：`test_readonly_db.py::test_a_misspelled_column_raises_instead_of_returning_its_own_name` 在這台機器上一直紅，
+  CP-080～084 都把它當成「本機 SQLite 的問題」排除。查清楚後是 uv 把 `.venv` 建成 Python 3.11.17：
+  `ReadOnlySQLite` 關掉雙引號字串相容行為要用 3.12 才有的 `Connection.setconfig`，3.11 上這段直接 `return`，
+  打錯的欄位名會被當成字串回傳。`pyproject.toml` 只要求 `>=3.11`，所以 uv 選 3.11 完全合法。
+
+### 做了什麼
+
+- `pyproject.toml`：`requires-python = ">=3.12"`、ruff `target-version = "py312"`；新增 `.python-version`（3.12）；重新 `uv lock`。
+- `src/text2sql/db.py`：拿不到 `setconfig` 或 DQS 旗標時丟 `DoubleQuotedStringGuardUnavailable`，不再靜默跳過；
+  `ReadOnlySQLite` 建構時就試一次，服務在 3.11 上啟動就失敗，而不是每次查詢被重試吞成「生成失敗」。
+- `scripts/launcher_dependency_state.ps1`：相依戳記加上 `.python-version` 的雜湊，只換 Python 版本也會重建 `.venv`。
+  （第一版的中文註解讓 PowerShell 5.1 用 cp950 讀檔時吃掉換行，下一行被當成註解、雜湊變空字串；改成 ASCII，
+  並新增測試要求 `scripts/*.ps1` 是 ASCII 或帶 BOM。）
+- 既有的 `.venv` 會自動重建：`pyproject.toml`／`uv.lock` 變了，啟動檔的戳記不符就會 `uv sync`，uv 發現解譯器不符合
+  `requires-python` 時重建環境。
+- 測試：`test_readonly_db.py` 新增 3 項（啟動時拒絕、沒有 setconfig 時拒絕、三處版本需求一致）；
+  `test_windows_launcher.py` 改成三段戳記並驗證只改 `.python-version` 也會重新同步。README 註明需要 3.12。
+
+- 驗收：Python 3.12.10；`ruff format --check`、`ruff check` 通過；`pytest -q` → **1285 passed，沒有排除任何測試**；
+  離線評測與既有報告逐欄相同。
+- 回退方式：`git revert` 本 commit（會回到 3.11 也能跑、但防護靜默失效的狀態）。
+- CI 第一次真的跑起來（fork 之前沒啟用 Actions）：Python 3.12.3 上雙引號防護正常；另外抓到 RT-3b 的兩項 Ollama runtime
+  測試要 `openai` 套件，CI 只裝 dev extra 而失敗，比照 `test_llm.py` 改成沒有 `openai` 時 `importorskip`。
+
 ## CP-083 — 日期區間不再靜默變成問第一天
 
 - 時間：2026-10-25 +08:00

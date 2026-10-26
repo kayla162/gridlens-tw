@@ -175,6 +175,8 @@ def test_the_project_runtime_carries_a_realtime_branch(database: Path) -> None:
 def test_the_ollama_provider_needs_no_api_key(
     database: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # 線上 runtime 要建 OpenAI 相容的 client；CI 只裝 dev extra（同 test_llm.py）。
+    pytest.importorskip("openai")
     monkeypatch.setenv(PROVIDER_ENV, "ollama")
     monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
     monkeypatch.delenv("OLLAMA_MODEL", raising=False)
@@ -193,6 +195,8 @@ def test_the_ollama_provider_needs_no_api_key(
 def test_a_keyless_online_runtime_is_not_dropped_as_a_stale_credential(
     database: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # 線上 runtime 要建 OpenAI 相容的 client；CI 只裝 dev extra（同 test_llm.py）。
+    pytest.importorskip("openai")
     monkeypatch.setenv(PROVIDER_ENV, "ollama")
     monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
 
