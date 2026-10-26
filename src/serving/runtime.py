@@ -188,6 +188,8 @@ def build_runtime(
     model: str | None = None,
     api_key: str | None = None,
     realtime_clock: Callable[[], datetime] | None = None,
+    request_timeout_seconds: float | None = None,
+    extra_body: dict[str, Any] | None = None,
 ) -> ServiceRuntime:
     """Build one immutable runtime without retaining a supplied API key.
 
@@ -230,7 +232,11 @@ def build_runtime(
     )
 
     # provider 可以有自己的逾時：本機模型（Ollama）在一般筆電上生成一句 SQL 要一兩分鐘。
-    request_timeout = float(settings.get("request_timeout_seconds", 30))
+    request_timeout = (
+        float(request_timeout_seconds)
+        if request_timeout_seconds is not None
+        else float(settings.get("request_timeout_seconds", 30))
+    )
     temperature = settings.get("temperature")
     llm = (
         OpenAILLM(
@@ -241,6 +247,9 @@ def build_runtime(
             api=str(settings.get("api", "responses")),
             structured_output=bool(settings.get("structured_output", True)),
             temperature=(None if temperature is None else float(temperature)),
+            # 評測可以覆寫 provider 的 extra_body（例如暫時把推理打開），不必改 llm.yaml。
+            extra_body=(extra_body if extra_body is not None else settings.get("extra_body"))
+            or None,
             api_key_env=api_key_env,
             model_env=str(settings.get("model_env", "OPENAI_MODEL")),
             default_model=str(settings.get("default_model", "gpt-5.4-mini")),

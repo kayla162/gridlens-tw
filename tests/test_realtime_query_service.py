@@ -216,3 +216,23 @@ def test_keyed_providers_still_fall_back_to_offline_without_a_key(
 
     assert runtime.mode == "offline"
     assert runtime.requires_api_key is True
+
+
+@pytest.mark.parametrize(
+    ("provider", "reasoning_off", "timeout"),
+    [("ollama", True, 120.0), ("ollama-reasoning", False, 600.0)],
+)
+def test_the_two_ollama_modes_differ_only_in_reasoning_and_timeout(
+    database: Path, monkeypatch: pytest.MonkeyPatch, provider: str, reasoning_off: bool, timeout
+) -> None:
+    """快／準兩種模式（README「本機 LLM 評測」）：同一個模型，差在推理與逾時。"""
+
+    pytest.importorskip("openai")
+    monkeypatch.setenv(PROVIDER_ENV, provider)
+    monkeypatch.delenv("OLLAMA_MODEL", raising=False)
+
+    runtime = build_runtime(database=database, root=PROJECT_ROOT, mode="auto")
+
+    assert runtime.mode == "online" and runtime.model == "qwen3:8b"
+    assert (runtime.pipeline.llm.extra_body == {"reasoning_effort": "none"}) is reasoning_off
+    assert runtime.pipeline.llm.client.timeout == timeout

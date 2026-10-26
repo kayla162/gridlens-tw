@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from math import isfinite
 from typing import Any, Protocol
@@ -249,6 +249,7 @@ class OpenAILLM:
         api_key_env: str = "OPENAI_API_KEY",
         model_env: str = "OPENAI_MODEL",
         default_model: str = "gpt-5.4-mini",
+        extra_body: Mapping[str, Any] | None = None,
     ):
         key = api_key or os.getenv(api_key_env)
         if not key:
@@ -273,6 +274,8 @@ class OpenAILLM:
         self.model = model or os.getenv(model_env, default_model)
         self.api = api
         self.structured_output = structured_output
+        # provider 專屬、SDK 沒有型別的參數，例如 Ollama 用 reasoning_effort: none 關掉推理。
+        self.extra_body = dict(extra_body or {})
         self.temperature = temperature
         # 認證失敗時要能指名該去設哪個變數，而那跟著 provider 走，不是永遠 OPENAI_API_KEY。
         self.api_key_env = api_key_env
@@ -336,6 +339,8 @@ class OpenAILLM:
             }
         if self.temperature is not None:
             options["temperature"] = self.temperature
+        if self.extra_body:
+            options["extra_body"] = self.extra_body
         response = self.client.chat.completions.create(**options)
         choices = getattr(response, "choices", None) or ()
         if not choices:
