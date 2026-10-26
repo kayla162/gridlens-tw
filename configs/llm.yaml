@@ -47,6 +47,11 @@ providers:
   # 本機的 Ollama（https://ollama.com），不需要 API key，也不連外網。
   # 用法：`ollama pull qwen3:8b`，再設環境變數 POWERQUERY_LLM_PROVIDER=ollama 啟動服務。
   # 換模型用 OLLAMA_MODEL。Ollama 的 OpenAI 相容端點支援 json_schema 輸出格式。
+  #
+  # 兩種模式，同一個模型，差在推理（thinking）開不開。數字來自 eval.llm_eval：規則接不住的 20 題，
+  # 都有答案檢查（log.md CP-088～090）：
+  #   ollama            推理關：答對 6/20，每題中位數 11 秒、最慢 23 秒，不會逾時。預設用這個。
+  #   ollama-reasoning  推理開：答對 10/20，每題中位數約 6 分鐘，7 題 900 秒內寫不完。
   ollama:
     api: chat_completions
     base_url: http://127.0.0.1:11434/v1
@@ -56,10 +61,20 @@ providers:
     default_model: qwen3:8b
     structured_output: true
     temperature: 0
-    # 本機模型慢：這台筆電上 qwen3:8b 生成一句即時 SQL 實測約 2 分鐘。
-    request_timeout_seconds: 300
-    # 關掉 qwen3 的推理（thinking）：CP-088 的評測裡 7 題推理停不下來，900 秒都寫不完。
+    request_timeout_seconds: 120
     # Ollama 0.40 的 OpenAI 相容端點認 reasoning_effort: none（think: false 不認）；
     # 實測同一個問題 161 秒、2432 tokens → 18 秒、327 tokens。
     extra_body:
       reasoning_effort: none
+
+  ollama-reasoning:
+    api: chat_completions
+    base_url: http://127.0.0.1:11434/v1
+    requires_api_key: false
+    api_key_env: OLLAMA_API_KEY
+    model_env: OLLAMA_MODEL
+    default_model: qwen3:8b
+    structured_output: true
+    temperature: 0
+    # 推理開著時，答得出來的題目最慢約 8 分鐘；更久的通常是推理停不下來，等再久也沒用。
+    request_timeout_seconds: 600

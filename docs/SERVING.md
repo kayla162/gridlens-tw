@@ -165,11 +165,18 @@ uv run python -m ingest.realtime history download               # 下載最新 d
 
 1. 安裝 [Ollama](https://ollama.com)，`ollama pull qwen3:8b`。
 2. `uv sync --extra online`（OpenAI 相容的 client）。
-3. 設環境變數 `POWERQUERY_LLM_PROVIDER=ollama` 再啟動服務；換模型用 `OLLAMA_MODEL`。
+3. 設環境變數 `POWERQUERY_LLM_PROVIDER` 再啟動服務；換模型用 `OLLAMA_MODEL`。
 
-`auto` 模式下 Ollama 視為已設定，所以 runtime 是 `online`；規則接得住的題目照樣不打 LLM。本機模型慢（這台筆電上
-`qwen3:8b` 生成一句即時 SQL 約 2 分鐘，逾時設 300 秒）；Ollama 沒在跑時 LLM 那一步失敗，規則與澄清照常運作。
-公開服務仍強制離線。
+| provider | 推理 | 規則接不住的 20 題 | 每題時間 | 逾時 |
+|---|---|---|---|---|
+| `ollama`（建議） | 關 | 答對 6 | 中位數 11 秒 | 120 秒 |
+| `ollama-reasoning` | 開 | 答對 10 | 中位數約 6 分鐘，7 題寫不完 | 600 秒 |
+
+數字來自 `python -m eval.llm_eval`（見 README「本機 LLM 評測」）。兩種模式都會檢查 LLM 寫的 SQL：值不在欄位的值清單、
+`LIKE` 沒有萬用字元、數字被當成字串、0 筆或被 LIMIT 截斷時，把原因交回模型重寫。
+
+`auto` 模式下 Ollama 視為已設定，所以 runtime 是 `online`；規則接得住的題目照樣不打 LLM。Ollama 沒在跑時
+LLM 那一步失敗，規則與澄清照常運作。公開服務仍強制離線。
 
 ## 資料管理登入
 
