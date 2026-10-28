@@ -124,7 +124,14 @@ QUESTION_VIEW_WORDS: dict[str, tuple[str, ...]] = {
     "v_system": ("負載", "備轉", "供電能力", "工業用電", "民生用電"),
     "v_generation_cost": ("成本",),
     "v_outage": ("歲修", "維修"),
+    # 歷史快照裡只有這張表有「度」：其餘都是瞬時功率或成本。沒有這一條，
+    # 「2025年3月每座風力場站的發電量」會因為 v_outage 不涵蓋 2025-03 而被講成日期超出範圍。
+    "v_re_generation": ("發電量", "場站"),
 }
+
+# 問句的日期是機組主檔的屬性（v_unit 的商轉日期），不是要查的期間。v_unit 沒有時間範圍，
+# 拿事實表的涵蓋期間去比，會把「2020年以後商轉的機組」擋成日期超出範圍。
+UNIT_ATTRIBUTE_DATE_WORDS = ("商轉",)
 
 
 def _view_time_spans(connection: sqlite3.Connection) -> dict[str, tuple[str, str]]:
@@ -263,7 +270,9 @@ class SemanticGuard:
         線上模式無關，換成線上也永遠答不出來。
         """
 
-        if entities.date_range is None:
+        if entities.date_range is None or any(
+            word in question for word in UNIT_ATTRIBUTE_DATE_WORDS
+        ):
             return None
         covering = {
             view: bounds
@@ -639,8 +648,10 @@ class SemanticGuard:
                 bounds = self._view_bounds(view)
                 if bounds is not None:
                     coverage = (min(coverage[0], bounds[0]), max(coverage[1], bounds[1]))
+        date_is_attribute = any(word in compact for word in UNIT_ATTRIBUTE_DATE_WORDS)
         if (
             entities.date_range
+            and not date_is_attribute
             and (entities.date_range.end < coverage[0] or entities.date_range.start > coverage[1])
             or "資料開始日前一天" in compact
         ):
