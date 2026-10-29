@@ -36,7 +36,7 @@ goto :initialize_directories
 
 :sync_dependencies
 echo [1/4] Synchronizing Python dependencies. The first run may take a while...
-call uv sync --extra dev --extra online
+call uv sync --extra dev --extra local
 if errorlevel 1 goto :sync_error
 powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0scripts\launcher_dependency_state.ps1" write >nul 2>&1
 if errorlevel 1 echo [WARNING] Dependency stamp could not be saved; the next launch will sync again.

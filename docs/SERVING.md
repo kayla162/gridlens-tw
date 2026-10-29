@@ -7,7 +7,7 @@
 安裝好 [uv](https://docs.astral.sh/uv/) 後，直接雙擊專案根目錄的 [`啟動.bat`](../啟動.bat)。啟動器會自動：
 
 1. 從批次檔所在的專案目錄執行，因此 OneDrive、中文或含空白路徑均可使用。
-2. 首次使用或 `pyproject.toml`／`uv.lock` 改變時同步離線、線上與開發依賴。
+2. 首次使用或 `pyproject.toml`／`uv.lock` 改變時同步開發與本機 LLM（`local`）依賴。
 3. 建立必要目錄，並只在 `data/processed/power.db` 不存在時建庫。
 4. 啟動 <http://127.0.0.1:8765/>，健康檢查成功後才開啟預設瀏覽器；若服務已在執行則直接沿用。
 
@@ -24,10 +24,10 @@ uv run python -m ingest.build_db
 uv run powerquery --serve
 ```
 
-開啟 <http://127.0.0.1:8000> 即可使用。只需要離線規則時不必安裝線上額外依賴；要啟用 OpenAI 長尾查詢時改用：
+開啟 <http://127.0.0.1:8000> 即可使用。只需要離線規則時不必安裝額外依賴；要讓本機 Ollama 處理長尾查詢時改用：
 
 ```powershell
-uv sync --extra dev --extra online
+uv sync --extra dev --extra local
 ```
 
 Windows 手動重建 `data/processed/power.db` 前，請先在服務視窗按 `Ctrl+C`。仍在執行的服務、SQLite 檢視器或同步程式可能鎖住檔案。網頁內的「資料管理」使用不可變資料庫版本與原子切換，不覆寫目前正在使用的資料庫，因此展示熱插拔時不需要停止服務。
@@ -105,7 +105,7 @@ uv run python -m ingest.realtime history download               # 下載最新 d
 - **查詢中心**：自然語言查詢、單次執行模式、常用問題，以及只保存非敏感問句的瀏覽器本機歷史。
 - **資料總覽**：即時發電（收集器狀態、各類型總出力、今日趨勢）、資料期間、尖峰紀錄、機組與歲修筆數，以及主題式分析入口。
 - **資料管理**：登入後管理資料檔、待審資料異動、語料審查、資料庫版本與雜湊鏈稽核紀錄。
-- **API 與模型**：登入後設定 `offline`、`online`、`auto`、模型及程序記憶體內 API key。
+- **本機 LLM**：登入後設定 `offline`、`local`、`auto` 與 Ollama 模型，並看到 Ollama 目前是否連得上。
 - **API 文件**：本機端點與請求範例；完整 schema 位於 `/openapi.json`。
 
 手機版導覽具備焦點鎖定與畫面外隱藏。Plotly CDN 無法載入時會使用相同資料的本機 SVG，不會顯示撐大的失效圖片。
@@ -161,11 +161,11 @@ uv run python -m ingest.realtime history download               # 下載最新 d
 
 ### 本機 LLM（Ollama）
 
-不連外網、不需要 API key 的 LLM：
+這個專題唯一的 LLM。不連外網、不需要 API key：
 
 1. 安裝 [Ollama](https://ollama.com)，`ollama pull qwen3:8b`。
-2. `uv sync --extra online`（OpenAI 相容的 client）。
-3. 設環境變數 `POWERQUERY_LLM_PROVIDER` 再啟動服務；換模型用 `OLLAMA_MODEL`。
+2. `uv sync --extra local`（Ollama 的 OpenAI 相容端點用的 client；`啟動.bat` 會自動做）。
+3. 啟動服務。預設 `auto` 偵測得到 Ollama 就用；要換推理模式設 `POWERQUERY_LLM_PROVIDER`，換模型用 `OLLAMA_MODEL`。
 
 | provider | 推理 | 規則接不住的 20 題 | 每題時間 | 逾時 |
 |---|---|---|---|---|
@@ -175,8 +175,9 @@ uv run python -m ingest.realtime history download               # 下載最新 d
 數字來自 `python -m eval.llm_eval`（見 README「本機 LLM 評測」）。兩種模式都會檢查 LLM 寫的 SQL：值不在欄位的值清單、
 `LIKE` 沒有萬用字元、數字被當成字串、0 筆或被 LIMIT 截斷時，把原因交回模型重寫。
 
-`auto` 模式下 Ollama 視為已設定，所以 runtime 是 `online`；規則接得住的題目照樣不打 LLM。Ollama 沒在跑時
-LLM 那一步失敗，規則與澄清照常運作。公開服務仍強制離線。
+`auto` 模式每 30 秒最多確認一次 Ollama 在不在（只問 `/v1/models`，1 秒逾時）；在就用本機 LLM，不在就退回離線規則。
+規則接得住的題目照樣不打 LLM。`local` 模式不偵測：Ollama 沒開時 LLM 那一步明確失敗（`LLM_UNAVAILABLE`），規則與澄清照常運作。
+公開服務以 `POWERQUERY_RUNTIME_MODE=offline` 固定只用規則。
 
 ## 資料管理登入
 
@@ -265,15 +266,16 @@ $writeHeaders = @{
 
 執行期工作區位於資料庫旁的 `.powerquery-data/`，包含不可變來源、候選／已發布資料庫、變更 manifest、`active.json`、短暫的 build／mutation／publish journals、append-only `audit.jsonl`、獨立 `audit-head.json` 與錨點永久建立標記。build journal 綁定候選 DB 與確切來源 checksum；mutation journal 確保 staged、failed、rejected 狀態與稽核事件成對恢復；版本檔、核准異動與稽核事件會先落盤，`active.json` 才作為發布的最後 commit point。若程序中途終止，下次 transaction 會從 journal 完成或安全拒絕。稽核事件依操作記錄登入帳號、動作、版本或 checksum 等細節，並以 `previous_hash`／`event_hash` 串接；錨點可偵測整檔遺失、截尾，active revision 也會與發布事件交叉核對。若來源、DB、manifest、指標或稽核歷史遭修改，查詢與所有管理讀取／異動都會 fail closed，而不是默默接受。含 `password`、`secret`、`token`、`credential` 或 `api_key` 等欄位會在稽核邊界遮罩。
 
-## 離線、線上與自動模式
+## 離線規則、本機 LLM 與自動模式
 
 `RuntimeManager` 支援三種模式：
 
-- `offline`：只使用已審核的規則路由與本機唯讀 SQLite，不呼叫遠端模型；未涵蓋的長尾問題會清楚拒答。
-- `online`：保留相同 SQL 與語意護欄，規則未涵蓋時使用 OpenAI Responses API。
-- `auto`：有可用 API key 時使用線上 runtime，否則退回離線模式。
+- `offline`：只使用已審核的規則路由與本機唯讀 SQLite，不呼叫任何模型；未涵蓋的長尾問題會清楚拒答或反問。
+- `local`：保留相同 SQL 與語意護欄，規則未涵蓋時交給本機 Ollama（[configs/llm.yaml](../configs/llm.yaml) 的 `base_url`）。
+- `auto`（預設）：偵測得到 Ollama 時同 `local`，否則同 `offline`。
 
-API key 可在啟動前由 `OPENAI_API_KEY` 提供，模型可由 `OPENAI_MODEL` 指定；也可登入後在「API 與模型」或 `PUT /api/runtime/llm` 設定。經 API 設定的 key 只存在伺服器程序記憶體，重啟即失效，狀態 API 只回 `online_configured`。線上 adapter 使用 [OpenAI Responses API](https://developers.openai.com/api/reference/cli/resources/responses/methods/create)，並設定 `store=false`。
+啟動時的預設模式可用 `POWERQUERY_RUNTIME_MODE`（`offline`／`local`／`auto`）指定，打錯字會讓服務起不來而不是默默退回 `auto`。
+登入後可在「本機 LLM」或 `PUT /api/runtime/llm` 切換模式與模型；狀態 API 回報 `local_available` 與端點位址。沒有任何金鑰或雲端端點可設定。
 
 `GET /api/runtime/llm` 需要管理 session；`PUT` 另外需要最新 CSRF 與同源 headers。單次公開查詢仍可用 `execution_mode` 覆寫模式，且不變更預設設定：
 
@@ -288,7 +290,7 @@ API key 可在啟動前由 `OPENAI_API_KEY` 提供，模型可由 `OPENAI_MODEL`
 
 每次透過 Web/API 成功完成的查詢都會交給隔離的語料學習服務評估。這裡的「學習」是新增 Text2SQL 檢索範例，不是背景微調模型。
 
-- 規則路由與線上 LLM 產生的新候選一律先通過去識別、重複、benchmark 洩漏、SQL／語意、結果重播及檢索回歸檢查。
+- 規則路由與本機 LLM 產生的新候選一律先通過去識別、重複、benchmark 洩漏、SQL／語意、結果重播及檢索回歸檢查。
 - 通過自動檢查的候選一律停在 `pending_review`；router 和 LLM 都沒有自動發布例外。只有登入者按人工核准，並以當下資料與語料基線重新驗證成功後，才會發布及熱重載檢索索引。
 - 失敗或拒答不加入候選；無效或重複候選可直接成為 `rejected`／`ignored`，但絕不會因此進入 active corpus。
 - 候選保存去識別問句、SQL、參數、來源、資料表、驗證結果、結果 checksum 及 `data_provenance`，不保存查詢結果 rows。來源資訊可追到資料版本、資料槽、顯示檔名、SHA-256、大小與語意 view。
@@ -313,6 +315,6 @@ API key 可在啟動前由 `OPENAI_API_KEY` 提供，模型可由 `OPENAI_MODEL`
 - `/docs` 以 nonce CSP、固定版號與 SRI 載入 Swagger UI；第一次使用互動檢視器需要連至 jsDelivr。主工作台內建文件不需要該 CDN。
 - 後端只允許受限的 `line`、`bar`、`scatter` 圖表；前端載入不到 Plotly 時退回原生 SVG。
 - 瀏覽器取消按鈕只停止等待與顯示，不中止已在後端執行的查詢。
-- 服務預設綁定 `127.0.0.1`。若要對外提供，必須覆寫預設帳密、限制 allowed hosts，並由可信任反向代理提供 TLS。記憶體內 OpenAI API key 不等於 API 身分驗證。
-- 送給線上模型的 prompt 會帶上「封閉集合」欄位的值（值少於 25 個、非純數字、串起來不長的欄位，例如 `v_unit."燃料"`）。這些值從作用中資料庫現讀，隨資料更新而變。目的是讓模型用資料實際的值當參數，而不是從問句抄詞 —— 後者會產生結構正確但查不到東西的 SQL，回 0 筆且不報錯。機組名、日期、各種量測值不在此列，它們是資料而不是列舉。
+- 服務預設綁定 `127.0.0.1`。若要對外提供，必須覆寫預設帳密、限制 allowed hosts，並由可信任反向代理提供 TLS。
+- 送給本機模型的 prompt 會帶上「封閉集合」欄位的值（值少於 25 個、非純數字、串起來不長的欄位，例如 `v_unit."燃料"`）。這些值從作用中資料庫現讀，隨資料更新而變。目的是讓模型用資料實際的值當參數，而不是從問句抄詞 —— 後者會產生結構正確但查不到東西的 SQL，回 0 筆且不報錯。機組名、日期、各種量測值不在此列，它們是資料而不是列舉。
 - prompt 另外列出**同名而值不同**的欄位。目前有三組：`燃料` 在 `v_outage` 是「燃煤／燃氣」而在 `v_unit` 是「煤／天然氣」；`縣市` 在 `v_unit` 含鄉鎮而在 `v_re_generation` 只到縣市；`電廠` 在 `v_peak` 有殘差桶的複合值。光列出值不足以讓模型發現這些差異，所以比對由服務做掉並明講。粒度差異另外在語料的 `documentation` 有一條規則說明該怎麼處理。

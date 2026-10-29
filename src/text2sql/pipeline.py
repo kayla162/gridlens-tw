@@ -38,7 +38,7 @@ LLM_FAILURE_CODES = {
     "incomplete": "LLM_INCOMPLETE",
 }
 
-# 憑證與設定的問題，換個問法不會變好。交給迴圈後面的離線澄清的話，使用者會看到
+# 服務與設定的問題，換個問法不會變好。交給迴圈後面的離線澄清的話，使用者會看到
 # 「這句沒有指名是哪一座電廠」，然後照做，然後還是不能用 —— 而真正該修的人不知道。
 IMMEDIATE_LLM_FAILURES = frozenset({"authentication", "configuration"})
 
@@ -205,14 +205,14 @@ class Text2SQLPipeline:
         只帶例外的類別名稱，不帶它的訊息 —— 上游的錯誤原文可能回顯我們送出去的東西。
         """
 
-        environment = getattr(self.llm, "api_key_env", None)
-        hint = f"（這個 provider 讀的是 {environment}）" if environment else ""
         messages = {
-            "authentication": f"線上服務拒絕了這組憑證；請到 API 設定確認金鑰與權限。{hint}",
-            "configuration": "線上服務不接受這個請求；請確認模型名稱、端點與輸出格式設定。",
-            "rate_limit": "線上服務這次限流了，稍後再試。",
-            "service": "線上生成這次用不了，而這一題需要它才答得出來。"
-            "規則接得住的問題不受影響，可以先換一個具體一點的問法。",
+            "authentication": "本機模型服務拒絕了這個請求；"
+            "請確認 Ollama 前面沒有加上需要驗證的代理。",
+            "configuration": "本機模型服務不接受這個請求；"
+            "請確認模型已下載（ollama pull）、名稱與端點設定正確。",
+            "rate_limit": "本機模型服務正忙，稍後再試。",
+            "service": "本機 LLM 這次用不了（Ollama 沒開、連不上或逾時），"
+            "而這一題需要它才答得出來。規則接得住的問題不受影響，可以先換一個具體一點的問法。",
             "refused": "模型拒絕回答這一題。換個問法或改問資料本身，重複送同一句不會有不同結果。",
             "incomplete": "模型的回應沒有講完；沒講完的 SQL 不會拿去執行。",
         }
@@ -481,15 +481,15 @@ class Text2SQLPipeline:
 
         # 最後一步：與其只回「未能通過驗證與執行」，不如問一句。這一層放在這裡而不是
         # 放在意圖分類，是因為相似度本身分不開 —— 會被它偷走的題目，到這裡早就被更具
-        # 體的規則接走了。線上模式同理：LLM 答得出來就走不到這裡。
+        # 體的規則接走了。本機 LLM 模式同理：LLM 答得出來就走不到這裡。
         # 日期先問。「2024年台中出力」答不出來的原因就是 2024 沒有出力資料，回一句
-        # 「缺少參數」或「線上生成用不了」都是把使用者指向錯的方向。
+        # 「缺少參數」或「本機 LLM 用不了」都是把使用者指向錯的方向。
         out_of_range = self.semantic_guard.explain_unanswerable_date(entities, question=question)
         if out_of_range is not None:
             return self._semantic_error(out_of_range, trace)
 
-        # 離線澄清照樣優先給使用者 —— 它是他當下做得到的事。但線上為什麼沒接上要留在
-        # evidence 裡，否則限流或服務中斷會完全躲在「這句沒有指名是哪一座電廠」後面。
+        # 離線澄清照樣優先給使用者 —— 它是他當下做得到的事。但 LLM 為什麼沒接上要留在
+        # evidence 裡，否則逾時或服務中斷會完全躲在「這句沒有指名是哪一座電廠」後面。
         llm_note = {"llm_error": llm_failure[0]} if llm_failure else {}
 
         missing = missing_parameter_clarification(

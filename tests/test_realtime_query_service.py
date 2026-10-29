@@ -17,7 +17,8 @@ from serving.accounts import MINIMUM_ITERATIONS, Account, hash_password
 from serving.admin_auth import AdminAuthManager
 from serving.app import create_app
 from serving.realtime_panel import RealtimePanel
-from serving.runtime import LOCAL_API_KEY, PROVIDER_ENV, RuntimeManager, build_runtime
+from serving.runtime import PROVIDER_ENV, RuntimeManager, build_runtime
+from text2sql.llm import LOCAL_API_KEY
 from text2sql.realtime_query import RealtimeQueryEngine
 from text2sql.scope_guard import ScopeCatalog
 
@@ -175,47 +176,45 @@ def test_the_project_runtime_carries_a_realtime_branch(database: Path) -> None:
 def test_the_ollama_provider_needs_no_api_key(
     database: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # 線上 runtime 要建 OpenAI 相容的 client；CI 只裝 dev extra（同 test_llm.py）。
+    # 本機 runtime 要建 OpenAI 相容的 client；CI 只裝 dev extra（同 test_llm.py）。
     pytest.importorskip("openai")
     monkeypatch.setenv(PROVIDER_ENV, "ollama")
-    monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
     monkeypatch.delenv("OLLAMA_MODEL", raising=False)
 
-    runtime = build_runtime(database=database, root=PROJECT_ROOT, mode="auto")
+    runtime = build_runtime(database=database, root=PROJECT_ROOT, mode="local")
 
-    assert runtime.mode == "online"
+    assert runtime.mode == "local"
     assert runtime.provider == "ollama"
-    assert runtime.source == "local"
     assert runtime.model == "qwen3:8b"
-    assert runtime.requires_api_key is False
     assert runtime.pipeline.llm.client.base_url.host == "127.0.0.1"
     assert runtime.pipeline.llm.client.api_key == LOCAL_API_KEY
 
 
-def test_a_keyless_online_runtime_is_not_dropped_as_a_stale_credential(
+def test_auto_uses_the_local_model_when_ollama_answers(
     database: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # 線上 runtime 要建 OpenAI 相容的 client；CI 只裝 dev extra（同 test_llm.py）。
     pytest.importorskip("openai")
     monkeypatch.setenv(PROVIDER_ENV, "ollama")
-    monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
 
-    manager = RuntimeManager(database=database, root=PROJECT_ROOT, default_mode="auto")
+    manager = RuntimeManager(
+        database=database, root=PROJECT_ROOT, default_mode="auto", probe=lambda _url: True
+    )
 
-    assert manager.get_runtime().mode == "online"
-    assert manager.status()["online_configured"] is True
+    assert manager.get_runtime().mode == "local"
+    assert manager.status()["local_available"] is True
 
 
-def test_keyed_providers_still_fall_back_to_offline_without_a_key(
+def test_auto_falls_back_to_offline_rules_without_ollama(
     database: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv(PROVIDER_ENV, raising=False)
-    monkeypatch.delenv("GMI_API_KEY", raising=False)
 
-    runtime = build_runtime(database=database, root=PROJECT_ROOT, mode="auto")
+    runtime = build_runtime(
+        database=database, root=PROJECT_ROOT, mode="auto", probe=lambda _url: False
+    )
 
     assert runtime.mode == "offline"
-    assert runtime.requires_api_key is True
+    assert runtime.local_llm is False
 
 
 @pytest.mark.parametrize(
@@ -231,8 +230,8 @@ def test_the_two_ollama_modes_differ_only_in_reasoning_and_timeout(
     monkeypatch.setenv(PROVIDER_ENV, provider)
     monkeypatch.delenv("OLLAMA_MODEL", raising=False)
 
-    runtime = build_runtime(database=database, root=PROJECT_ROOT, mode="auto")
+    runtime = build_runtime(database=database, root=PROJECT_ROOT, mode="local")
 
-    assert runtime.mode == "online" and runtime.model == "qwen3:8b"
+    assert runtime.mode == "local" and runtime.model == "qwen3:8b"
     assert (runtime.pipeline.llm.extra_body == {"reasoning_effort": "none"}) is reasoning_off
     assert runtime.pipeline.llm.client.timeout == timeout

@@ -7,7 +7,8 @@
 比對不看欄位名稱與順序，只看值：gold 的每一列都要在預測結果裡找到一列，對每個 `match` 群組
 至少包含其中一個 gold 值（同一個量用瓩或萬瓩都算對），而且列數要相同。數字容許四捨五入的誤差。
 
-    uv run --extra online python -m eval.llm_eval --timeout 900
+    uv run --extra local python -m eval.llm_eval --timeout 900
+    uv run --extra local python -m eval.llm_eval --no-rag --label no_rag   # 關掉檢索的對照
 """
 
 from __future__ import annotations
@@ -101,16 +102,19 @@ def evaluate(
     timeout_seconds: float | None = None,
     extra_body: dict[str, Any] | None = None,
     label: str | None = None,
+    rag: bool = True,
 ) -> dict[str, Any]:
     items = json.loads(BENCHMARK.read_text(encoding="utf-8"))
     rule_hits = _rule_misses(database, items)
     os.environ[PROVIDER_ENV] = provider
     runtime = build_runtime(
         database=database,
-        mode="online",
+        mode="local",
         model=model,
         request_timeout_seconds=timeout_seconds,
         extra_body=extra_body,
+        # 0 筆範例 = prompt 只剩 schema、欄位值與領域規則，用來單獨量檢索的效果。
+        retrieval_top_k=None if rag else 0,
     )
     results: list[dict[str, Any]] = []
     for item in items:
@@ -155,6 +159,7 @@ def evaluate(
         "timeout_seconds": timeout_seconds,
         "label": label,
         "extra_body": getattr(runtime.pipeline.llm, "extra_body", None),
+        "rag": rag,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "questions": len(items),
         "measured": len(measured),
@@ -178,7 +183,8 @@ def write_reports(report: dict[str, Any], directory: Path) -> tuple[Path, Path]:
         f"# LLM 路徑評測：{report['provider']}（{report['model']}）"
         + (f"・{report['label']}" if report.get("label") else ""),
         "",
-        f"> provider 額外參數：`{json.dumps(report.get('extra_body') or {}, ensure_ascii=False)}`",
+        f"> provider 額外參數：`{json.dumps(report.get('extra_body') or {}, ensure_ascii=False)}`；"
+        f"RAG 範例：{'開' if report.get('rag', True) else '關'}",
         "",
         f"> 產生時間 {report['generated_at']}。題庫 `benchmarks/llm_questions.json`："
         "只收離線規則接不住、但資料答得出來的問題；以 gold SQL 的執行結果比對（不看欄名與順序）。",
@@ -224,6 +230,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--label", default=None, help="報告檔名後綴，例如 thinking")
     parser.add_argument(
+        "--no-rag",
+        action="store_true",
+        help="不給模型任何檢索範例，對照 RAG 本身對準確率的影響",
+    )
+    parser.add_argument(
         "--timeout",
         type=float,
         default=None,
@@ -239,6 +250,7 @@ def main(argv: list[str] | None = None) -> int:
         timeout_seconds=args.timeout,
         extra_body=json.loads(args.extra_body) if args.extra_body is not None else None,
         label=args.label,
+        rag=not args.no_rag,
     )
     json_path, markdown_path = write_reports(report, args.out)
     print(

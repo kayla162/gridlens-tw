@@ -266,8 +266,8 @@ class SemanticGuard:
         `check_question` 跑在 route 之前，只能擋「所有檢視都涵蓋不到」；`check_sql` 擋得
         精準，但要先有 SQL 才輪到它。中間有一道縫：「2024年台中出力」—— v_peak 沒有
         2024，v_generation_cost 有，所以前者放行；router 又接不住這個問法，沒有 SQL 給
-        後者看。掉進縫裡的題目只會拿到一句「線上生成這次用不了」，而那是誤導 —— 它跟
-        線上模式無關，換成線上也永遠答不出來。
+        後者看。掉進縫裡的題目只會拿到一句「本機 LLM 這次用不了」，而那是誤導 —— 它跟
+        模型無關，換成本機 LLM 也永遠答不出來。
         """
 
         if entities.date_range is None or any(
