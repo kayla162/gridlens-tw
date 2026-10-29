@@ -2,6 +2,74 @@
 
 > 這份檔案在每個可驗證、可回退的儲存點更新。回退前需保留使用者原有的未提交變更。
 
+## CP-094 — RAG 對照：關掉檢索範例，答對數不變、換了一批題目
+
+- 時間：2026-10-29 +08:00
+- 狀態：已完成（實驗）
+- 分支：`feat/local-llm-only`
+- 起點：使用者問 LLM 準確率低是不是 RAG 造成的。CP-088～090 只比過推理與答案檢查，RAG 從沒單獨關掉過。
+
+### 先看檢索撈到什麼（不需要模型）
+
+- 20 題裡 15 題至少有一則範例查的是正確答案用的檢視；5 題一則都沒有，全是 `v_unit` 題目
+  （「各縣市各有幾部機組」「哪一座電廠的機組數最多」⋯），撈到的多半是「核一、核二、核三各有幾部機組」這類字面像、查別張表的範例。
+- 語料 77 則裡 `outage` 21 則，再生能源各只有 1 則；`v_unit` 的通用題型很少。
+
+### 對照（`eval.llm_eval --label rag` 與 `--no-rag --label no_rag`，qwen3:8b、推理關、同一份 20 題）
+
+| | 有 RAG | 關 RAG |
+|---|---:|---:|
+| 答對 | 5 | 5 |
+| 答錯但看起來正常 | 5 | 5 |
+| 沒有回答 | 10 | 10 |
+| 每題秒數（中位數／最大） | 76／163 | 69／122 |
+
+- 7 題結果不同。RAG 幫上的：「7月20日各類別尖峰出力合計」（沒範例時多加 `粒度 = '單機'`）、
+  「台中#1 7 月平均尖峰出力」（沒範例時沒用 AVG、月份寫成 1～7 月）。
+- RAG 帶偏的：「哪一座電廠的機組數最多」照抄核能範例查 `v_peak` 並加 `類別 = '核能'`，關掉後改查 `v_unit` 答對；
+  「尖峰出力超過50萬瓩的機組欄位有幾個」有範例時列出清單而不是計數。
+- 結論：RAG 不是準確率低的主因（總分相同，推理開關才是 6→10 的差距），但字元 n-gram 只懂字面，範例會帶偏；
+  改進方向是語意檢索（本機已有 `bge-m3`）或補 `v_unit` 的通用範例。這次沒有改檢索。
+- 同設定（有 RAG、推理關）重跑：5 題答對，CP-089 是 6 題（「各燃料別各有幾部機組」這次答錯）→ 單次差 1 題屬正常波動。
+- 這台機器這次比 CP-089 慢約 6 倍（中位數 76 對 11 秒），1 題撞到 120 秒逾時（`LLM_UNAVAILABLE`）；兩輪在同一時段跑，彼此可比。
+- 報告：`reports/llm_eval_ollama_rag.*`、`reports/llm_eval_ollama_no_rag.*`。原本的 `llm_eval_ollama.*` 不動。
+- 回退方式：刪掉兩份報告即可（不改程式）。
+
+## CP-093 — 拿掉線上模型：全程地端，LLM 只剩本機 Ollama
+
+- 時間：2026-10-29 +08:00
+- 狀態：已完成
+- 分支：`feat/local-llm-only`
+- 起點：使用者決定專題以「地端」為亮點。OpenAI／GMI 兩家線上 provider 從沒對真實 key 打通過（CP-059、CP-060），
+  評測也只做過 Ollama（CP-088～091）。
+
+### 做了什麼
+
+- **模式**：`offline`／`online`／`auto` → `offline`／`local`／`auto`。`auto` 改成偵測 Ollama（`GET {base_url}/models`，
+  1 秒逾時、結果快取 30 秒），偵測不到就退回規則；`local` 不偵測，Ollama 沒開時明確回 `LLM_UNAVAILABLE`。
+- **`src/serving/runtime.py`**：拿掉記憶體內 API key、環境變數憑證、憑證指紋與「key 被移除就丟掉 runtime」整套邏輯（-270 行）。
+  `ServiceRuntime.online_llm` → `local_llm`，新增 `base_url`、`injected`；狀態回 `local_available` 與端點。
+  `build_runtime(retrieval_top_k=...)` 讓評測可以關掉 RAG。
+- **`src/text2sql/llm.py`**：`OpenAILLM` → `LocalLLM`，只剩 chat completions；`base_url` 必填（不會退回 SDK 的雲端預設），不讀任何 `*_API_KEY`。
+  Responses API 路徑與它的拒答／未完成解析一起移除。
+- **`configs/llm.yaml`**：只剩 `ollama`（預設）與 `ollama-reasoning`，沒有雲端端點與金鑰欄位，測試釘住。
+- **啟動模式**：新增 `POWERQUERY_RUNTIME_MODE`。公開離線服務原本靠清掉 `OPENAI_API_KEY` 保持離線；
+  現在 `auto` 在開著 Ollama 的機器上會改用本機模型，所以改成明設 `offline`，不把本機模型開給網路訪客。
+- **前端**：「API 與模型」→「本機 LLM」，拿掉 API key 欄位與「清除記憶體金鑰」按鈕，改顯示 Ollama 是否連得上與端點。
+- **套件**：`online` extra → `local`（仍是 `openai` SDK，Ollama 的 OpenAI 相容端點用）；`啟動.bat` 跟著改。
+- **評測**：`eval.llm_eval --no-rag`；離線報告的 `not_run_without_online_llm` → `measured_by_llm_eval`；
+  `scripts/eval_online.py` → `scripts/eval_checklist.py`（預設 `--mode local`）。
+- **測試**：新增 `tests/conftest.py`，session 範圍內預設「沒有 Ollama」——不少 fixture 在模組層級建 runtime，
+  不釘住的話開著 Ollama 的開發機與 CI 會走不同路徑。`test_runtime_modes.py`、`test_llm.py` 依新模式改寫。
+- **文件**：README 新增「全程地端」一節；SERVING、API 契約、TEXT2SQL_PIPELINE、EVALUATION、SPEC、SYSTEM_CARD、
+  PUBLIC_OFFLINE_SERVING、TEAM_4_ROLES、`.env.example` 改成本機 LLM。log.md 與 `docs/superpowers/` 的舊紀錄保留原樣。
+
+- 實測：`auto` 偵測到本機 Ollama 後改用本機模式，`gemma3:4b` 回答「各燃料別各有幾部機組」的 SQL 通過守門並執行
+  （但漏了燃料欄，答案不完整 —— 小模型的準確率問題，不是介接層的問題）。
+- 驗收：`ruff format --check`、`ruff check`、`node --check app.js` 通過；`pytest -q` → 1309 passed
+  （刪掉只驗金鑰／雲端 provider 的測試，淨少 8 項）；離線評測與修改前相同（意圖、執行、端到端 100%，陷阱判斷 97.8%）。
+- 回退方式：`git revert` 本 commit。
+
 ## CP-092 — 答得出來的兩題不再被擋成日期超出範圍
 
 - 時間：2026-10-28 +08:00
