@@ -126,7 +126,7 @@ exit /b 0
     assert not (elsewhere / "data").exists()
 
     calls = log.read_text(encoding="utf-8").splitlines()
-    assert calls.count("sync --extra dev --extra online") == 3
+    assert calls.count("sync --extra dev --extra local") == 3
     assert calls.count("run --no-sync python -m project_tasks init-dirs") == 4
     assert calls.count("run --no-sync python -m ingest.build_db") == 1
     assert calls.count("run --no-sync powerquery --serve --host 127.0.0.1 --port 8765") == 4

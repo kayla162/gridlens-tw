@@ -19,7 +19,7 @@
     query: ["查詢中心", "安全地把自然語言轉成可追溯資料答案", "queryHeading"],
     overview: ["資料總覽", "掌握資料涵蓋並從常用分析開始", "overviewHeading"],
     data: ["資料管理", "管理資料檔、人工審核、資料庫版本與完整稽核", "dataHeading"],
-    settings: ["API 與模型", "切換離線規則或線上模型服務", "settingsHeading"],
+    settings: ["本機 LLM", "切換離線規則或本機模型", "settingsHeading"],
     docs: ["API 文件", "查閱端點、請求格式與回應契約", "docsHeading"]
   };
 
@@ -603,8 +603,8 @@
       actions.appendChild(button);
     });
     var errorText = String(payload.error || "") + " " + String(payload.error_code || "");
-    if (/API|api.?key|online|線上|金鑰/i.test(errorText)) {
-      var settingsButton = element("button", "suggestion", "前往 API 設定");
+    if (/LLM_|本機 LLM|Ollama/i.test(errorText)) {
+      var settingsButton = element("button", "suggestion", "前往本機 LLM 設定");
       settingsButton.type = "button";
       settingsButton.addEventListener("click", function () { showView("settings"); });
       actions.appendChild(settingsButton);
@@ -660,7 +660,7 @@
   function loadHealth() {
     return api("/api/health").then(function (health) {
       byId("statusDot").className = "status-dot connected";
-      byId("statusText").textContent = health.demo ? "離線分析服務已就緒" : "線上分析服務已就緒";
+      byId("statusText").textContent = health.demo ? "離線分析服務已就緒" : "本機 LLM 分析服務已就緒";
       byId("demoBanner").hidden = !health.demo;
     }).catch(function (error) {
       byId("statusDot").className = "status-dot failed";
@@ -952,7 +952,7 @@
   }
 
   function modeLabel(mode) {
-    if (mode === "online") return "線上 API";
+    if (mode === "local") return "本機 LLM";
     if (mode === "auto") return "自動判斷";
     if (mode === "default") return "沿用預設";
     return "離線規則";
@@ -971,21 +971,21 @@
 
   function renderRuntime(info) {
     runtimeInfo = info || {};
-    activeMode = ["auto", "offline", "online"].indexOf(runtimeInfo.active_mode) >= 0 ? runtimeInfo.active_mode : "offline";
-    var defaultMode = ["auto", "offline", "online"].indexOf(runtimeInfo.default_mode) >= 0 ? runtimeInfo.default_mode : activeMode;
+    activeMode = ["auto", "offline", "local"].indexOf(runtimeInfo.active_mode) >= 0 ? runtimeInfo.active_mode : "offline";
+    var defaultMode = ["auto", "offline", "local"].indexOf(runtimeInfo.default_mode) >= 0 ? runtimeInfo.default_mode : activeMode;
     byId("activeModeLabel").textContent = modeLabel(activeMode);
     byId("modeShortcut").setAttribute("data-mode", activeMode);
     byId("summaryActiveMode").textContent = modeLabel(activeMode);
     byId("summaryDefaultMode").textContent = modeLabel(defaultMode);
-    byId("summaryOnlineConfigured").textContent = runtimeInfo.online_configured ? "已設定" : "尚未設定";
+    byId("summaryLocalAvailable").textContent = runtimeInfo.local_available ? "已連線" : "未偵測到";
     byId("summaryProvider").textContent = valueText(runtimeInfo.provider);
+    byId("summaryBaseUrl").textContent = valueText(runtimeInfo.base_url);
     byId("summaryModel").textContent = valueText(runtimeInfo.model);
     byId("offlineCapability").textContent = capabilityText(runtimeInfo.offline_capability);
     var radio = document.querySelector("input[name='runtimeMode'][value='" + defaultMode + "']");
     if (radio) radio.checked = true;
     if (runtimeInfo.model && runtimeInfo.model !== "—" && document.activeElement !== byId("modelInput")) byId("modelInput").value = runtimeInfo.model;
-    byId("runtimeSaveStatus").textContent = defaultMode === "online" && !runtimeInfo.online_configured ? "需要 API key" : "已同步";
-    byId("clearRuntimeKey").disabled = runtimeRequestActive || !runtimeInfo.online_configured;
+    byId("runtimeSaveStatus").textContent = defaultMode === "local" && !runtimeInfo.local_available ? "Ollama 未連線" : "已同步";
   }
 
   function loadRuntime(announceResult) {
@@ -996,7 +996,7 @@
       loadHealth();
       if (announceResult) announce("執行模式已同步", false);
     }).catch(function (error) {
-      renderRuntime({ default_mode: "auto", active_mode: "offline", online_configured: false, provider: "—", model: "—" });
+      renderRuntime({ default_mode: "auto", active_mode: "offline", local_available: false, provider: "—", model: "—", base_url: "—" });
       byId("runtimeSaveStatus").textContent = error && (error.status === 401 || error.status === 403) ? "需要管理登入" : "無法讀取";
       if (error && (error.status === 401 || error.status === 403)) {
         byId("runtimeFeedback").className = "inline-feedback error";
@@ -1013,21 +1013,18 @@
       byId("runtimeFeedback").className = "inline-feedback error";
       byId("runtimeFeedback").textContent = "請先到「資料管理」登入，再套用執行設定。";
       byId("runtimeFeedback").hidden = false;
-      announce("API 與模型設定需要管理登入", true);
+      announce("本機 LLM 設定需要管理登入", true);
       return;
     }
     if (runtimeRequestActive) return;
     var chosen = document.querySelector("input[name='runtimeMode']:checked");
-    var keyInput = byId("apiKeyInput");
     var modelInput = byId("modelInput");
     var feedback = byId("runtimeFeedback");
     var save = byId("saveRuntime");
     var body = { mode: chosen ? chosen.value : "auto" };
     if (modelInput.value.trim()) body.model = modelInput.value.trim();
-    if (keyInput.value.trim()) body.api_key = keyInput.value.trim();
     runtimeRequestActive = true;
     save.disabled = true;
-    byId("clearRuntimeKey").disabled = true;
     feedback.hidden = true;
     byId("runtimeSaveStatus").textContent = "套用中…";
     api("/api/runtime/llm", { method: "PUT", body: body }).then(function (payload) {
@@ -1036,7 +1033,7 @@
       feedback.className = "inline-feedback";
       feedback.textContent = "設定已套用。後續查詢會使用「" + modeLabel(info.active_mode || body.mode) + "」。";
       feedback.hidden = false;
-      announce("API 與模型設定已套用", false);
+      announce("本機 LLM 設定已套用", false);
     }).catch(function (error) {
       feedback.className = "inline-feedback error";
       feedback.textContent = "設定未套用：" + error.message;
@@ -1044,61 +1041,8 @@
       byId("runtimeSaveStatus").textContent = "儲存失敗";
       announce(error.message, true);
     }).finally(function () {
-      keyInput.value = "";
-      keyInput.type = "password";
-      byId("toggleApiKey").textContent = "顯示";
-      byId("toggleApiKey").setAttribute("aria-label", "顯示 API key");
       runtimeRequestActive = false;
       save.disabled = false;
-      byId("clearRuntimeKey").disabled = !runtimeInfo.online_configured;
-    });
-  }
-
-  function clearRuntimeKey() {
-    if (!adminSession) {
-      byId("runtimeFeedback").className = "inline-feedback error";
-      byId("runtimeFeedback").textContent = "請先到「資料管理」登入，再清除記憶體金鑰。";
-      byId("runtimeFeedback").hidden = false;
-      announce("清除 API key 需要管理登入", true);
-      return;
-    }
-    if (runtimeRequestActive) return;
-    var button = byId("clearRuntimeKey");
-    var save = byId("saveRuntime");
-    var keyInput = byId("apiKeyInput");
-    var feedback = byId("runtimeFeedback");
-    runtimeRequestActive = true;
-    button.disabled = true;
-    save.disabled = true;
-    keyInput.value = "";
-    keyInput.type = "password";
-    byId("toggleApiKey").textContent = "顯示";
-    byId("toggleApiKey").setAttribute("aria-label", "顯示 API key");
-    feedback.hidden = true;
-    byId("runtimeSaveStatus").textContent = "清除中…";
-    api("/api/runtime/llm", {
-      method: "PUT",
-      body: { mode: "offline", api_key: null }
-    }).then(function (payload) {
-      var info = businessData(payload);
-      renderRuntime(info);
-      loadHealth();
-      feedback.className = "inline-feedback";
-      feedback.textContent = info.online_configured
-        ? "已切換離線並清除程序內金鑰；啟動環境仍提供 OPENAI_API_KEY。"
-        : "程序記憶體內的 API key 已清除，預設模式已切換為離線。";
-      feedback.hidden = false;
-      announce("記憶體內 API key 已清除", false);
-    }).catch(function (error) {
-      feedback.className = "inline-feedback error";
-      feedback.textContent = "金鑰未清除：" + error.message;
-      feedback.hidden = false;
-      byId("runtimeSaveStatus").textContent = "清除失敗";
-      announce(error.message, true);
-    }).finally(function () {
-      runtimeRequestActive = false;
-      save.disabled = false;
-      button.disabled = !runtimeInfo.online_configured;
     });
   }
 
@@ -2591,14 +2535,6 @@
   byId("corpusSearch").addEventListener("input", renderCorpusList);
   byId("corpusStateFilter").addEventListener("change", renderCorpusList);
   byId("runtimeForm").addEventListener("submit", saveRuntime);
-  byId("clearRuntimeKey").addEventListener("click", clearRuntimeKey);
-  byId("toggleApiKey").addEventListener("click", function () {
-    var key = byId("apiKeyInput");
-    var show = key.type === "password";
-    key.type = show ? "text" : "password";
-    this.textContent = show ? "隱藏" : "顯示";
-    this.setAttribute("aria-label", (show ? "隱藏" : "顯示") + " API key");
-  });
   byId("closeCorpusDialog").addEventListener("click", closeCorpusDialog);
   byId("closeDatasetDialog").addEventListener("click", closeDatasetDialog);
   byId("closeDataChangeDialog").addEventListener("click", closeDataChangeDialog);

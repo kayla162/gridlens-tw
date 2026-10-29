@@ -728,8 +728,8 @@ def test_a_date_only_some_views_cover_says_which_ones() -> None:
     """兩關之間的縫：v_peak 沒有 2024，v_generation_cost 有。
 
     check_question 放行（聯集涵蓋得到），router 又接不住這個問法，於是沒有 SQL 讓
-    check_sql 檢查。掉進縫裡的題目會拿到「線上生成這次用不了」—— 那句話是誤導，
-    它跟線上模式無關，換成線上也永遠答不出來。
+    check_sql 檢查。掉進縫裡的題目會拿到「本機 LLM 這次用不了」—— 那句話是誤導，
+    它跟模型無關，換成本機 LLM 也永遠答不出來。
     """
 
     question = "查2024年台中出力"

@@ -793,14 +793,14 @@ def test_public_audit_hook_redacts_credentials_and_extends_chain(tmp_path: Path)
         "runtime_settings_changed",
         actor="administrator",
         details={
-            "mode": "online",
+            "mode": "local",
             "api_key": "must-not-be-written",
             "nested": {"access-token": "also-secret", "model": "example-model"},
         },
     )
 
     assert event["details"] == {
-        "mode": "online",
+        "mode": "local",
         "api_key": "[REDACTED]",
         "nested": {"access-token": "[REDACTED]", "model": "example-model"},
     }
