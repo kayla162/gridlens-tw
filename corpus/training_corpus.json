@@ -43,7 +43,7 @@
     },
     {
       "id": "limit",
-      "text": "所有生成SQL必須是單一SELECT並包含LIMIT，字面值應轉為參數。"
+      "text": "所有生成SQL必須是單一SELECT並包含LIMIT；LIMIT寫整數常數（例如LIMIT 5），不要寫成LIMIT ?。WHERE條件裡的字面值應轉為參數。"
     },
     {
       "id": "renewable-self-built-only",
@@ -60,6 +60,14 @@
     {
       "id": "county-granularity",
       "text": "縣市欄位在不同檢視的粒度不同：v_unit的縣市含鄉鎮（例如南投縣水里鄉），v_re_generation的縣市只到縣市（例如南投縣）。問哪個縣市時不可直接對v_unit的縣市分組，那等於按鄉鎮分組；要縣市層級請用SUBSTR(\"縣市\",1,3)。"
+    },
+    {
+      "id": "view-choice",
+      "text": "機組數、電廠有哪些機組、裝置容量、燃料、縣市、商轉日期都查v_unit，一列是一部機組，數機組用COUNT(*)。v_peak是每日尖峰出力，一列是某一天的一個出力欄位，不可用來數機組或電廠，也不要為了數機組加上類別條件。"
+    },
+    {
+      "id": "count-and-groups",
+      "text": "問「有幾個／幾部／幾天」要用COUNT回傳一個數字，不要列出清單。問「各／每…」要每一組都列出來，GROUP BY後不可用LIMIT 1只留第一名；問兩個期間各是多少時，WHERE要同時涵蓋兩個期間。"
     }
   ],
   "examples": [

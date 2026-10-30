@@ -96,9 +96,10 @@ def _pipeline(llm: FakeLLM, run_sql, tmp_path) -> Text2SQLPipeline:
 
 
 def test_the_pipeline_sends_a_silent_mistake_back_and_runs_the_corrected_sql(tmp_path) -> None:
+    # 「林口」在「新北市林口區」的中段，不是開頭也不是結尾：sql_repair 不猜，交回模型。
     wrong = {
         "sql": 'SELECT DISTINCT "電廠" FROM v_unit WHERE "縣市" = ? LIMIT 200',
-        "params": ["新北市"],
+        "params": ["林口"],
     }
     right = {
         "sql": 'SELECT DISTINCT "電廠" FROM v_unit WHERE "縣市" LIKE ? LIMIT 200',
@@ -128,3 +129,35 @@ def test_rule_sql_is_never_second_guessed(tmp_path) -> None:
 
     assert llm.calls == []
     assert response.data["source"] == "router"
+
+
+def test_asking_for_every_group_makes_a_grouped_limit_one_suspicious() -> None:
+    sql = 'SELECT "燃料", COUNT(*) AS n FROM v_unit GROUP BY "燃料" ORDER BY n DESC LIMIT 1'
+
+    issue = check_result(sql, [("煤", 9)], asks_top_n=False, max_rows=200, asks_every_group=True)
+
+    assert issue is not None and issue.code == "RESULT_TRUNCATED"
+    # 「哪一座電廠的機組數最多」才是刻意只取第一名
+    assert check_result(sql, [("煤", 9)], asks_top_n=False, max_rows=200) is None
+
+
+def test_a_mechanical_mistake_is_repaired_without_another_model_call(tmp_path) -> None:
+    wrong = {
+        "sql": 'SELECT DISTINCT "電廠" FROM v_unit WHERE "縣市" = ? LIMIT ?',
+        "params": ["新北市", "200"],
+    }
+    llm = FakeLLM([json.dumps(wrong, ensure_ascii=False)])
+    executed: list[tuple] = []
+
+    def run_sql(sql, params):
+        executed.append((sql, params))
+        return ["電廠"], [("林口發電廠",), ("桂山發電廠",)]
+
+    response = _pipeline(llm, run_sql, tmp_path).query("新北市有哪些電廠")
+
+    assert response.success
+    assert len(llm.calls) == 1
+    assert executed == [
+        ('SELECT DISTINCT "電廠" FROM v_unit WHERE "縣市" LIKE ? LIMIT 200', ("新北市%",))
+    ]
+    assert any(step["stage"] == "repair" for step in response.data["trace"])

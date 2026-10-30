@@ -84,9 +84,11 @@ ALLOWED_COLUMNS = {
 # 超時那道攔不到。黑名單補上 randomblob 還會漏下一個，所以改成白名單，跟這個檔案
 # 對資料表與欄位的做法一致。
 #
-# 專案現有的 102 段 SQL（語料、題庫、router 手寫）用到的函式全都是 sqlglot 認得的，
-# 所以這份白名單目前是空的；真的需要某個 SQLite 專有函式時再具名加入。
-ALLOWED_UNKNOWN_FUNCTIONS: frozenset[str] = frozenset()
+# 專案現有的 102 段 SQL（語料、題庫、router 手寫）用到的函式全都是 sqlglot 認得的；
+# 需要某個 SQLite 專有函式時具名加入：
+#   julianday  日期轉成天數，算歲修天數這類期間長度的標準寫法（CP-097：本機模型三次都這樣寫，
+#              全被擋下）。輸入一個日期、輸出一個數字，不配置記憶體也不碰檔案。
+ALLOWED_UNKNOWN_FUNCTIONS: frozenset[str] = frozenset({"julianday"})
 FORBIDDEN_KEYWORDS = re.compile(
     r"\b(?:INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|REPLACE|ATTACH|DETACH|PRAGMA|VACUUM|REINDEX)\b",
     re.IGNORECASE,

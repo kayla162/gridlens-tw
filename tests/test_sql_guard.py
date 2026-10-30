@@ -103,3 +103,12 @@ def test_guard_accepts_generation_cost_view_query() -> None:
 
     assert result.allowed
     assert result.tables == ("v_generation_cost",)
+
+
+def test_julianday_is_allowed_for_date_differences() -> None:
+    sql = (
+        'SELECT "機組名", julianday("結束日期") - julianday("開始日期") AS d '
+        'FROM v_outage WHERE "日期狀態" = ? ORDER BY d DESC LIMIT 5'
+    )
+
+    assert SqlGuard().validate(sql, ("valid",)).allowed
