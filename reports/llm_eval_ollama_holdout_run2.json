@@ -1,0 +1,358 @@
+{
+  "provider": "ollama",
+  "model": "qwen3:8b",
+  "timeout_seconds": null,
+  "label": "holdout_run2",
+  "extra_body": {
+    "reasoning_effort": "none"
+  },
+  "rag": true,
+  "questions_file": "llm_holdout_questions.json",
+  "generated_at": "2026-10-30T07:28:15+00:00",
+  "questions": 20,
+  "measured": 20,
+  "rule_hits_excluded": 0,
+  "correct": 9,
+  "wrong_result": 11,
+  "no_answer": 0,
+  "accuracy": 0.45,
+  "median_seconds": 11.4,
+  "max_seconds": 36.3,
+  "results": [
+    {
+      "id": "holdout-unit-plant-capacity",
+      "question": "各電廠的總裝置容量（萬瓩）",
+      "outcome": "correct",
+      "rule_hit": false,
+      "source": "llm",
+      "error_code": null,
+      "llm_error": null,
+      "attempts": 3,
+      "seconds": 36.3,
+      "sql": "SELECT \"電廠\", SUM(\"裝置容量_萬瓩\") AS \"總裝置容量_萬瓩\" FROM v_unit GROUP BY \"電廠\" ORDER BY \"電廠\" LIMIT 200",
+      "params": [],
+      "rows": 22,
+      "gold_rows": 22
+    },
+    {
+      "id": "holdout-unit-kinmen-plants",
+      "question": "金門縣有哪些電廠",
+      "outcome": "wrong_result",
+      "rule_hit": false,
+      "source": "llm",
+      "error_code": null,
+      "llm_error": null,
+      "attempts": 1,
+      "seconds": 10.4,
+      "sql": "SELECT \"電廠\" FROM v_unit WHERE \"縣市\" LIKE ? AND \"電廠\" IN (SELECT \"電廠\" FROM v_unit WHERE \"縣市\" LIKE ?) LIMIT 100",
+      "params": [
+        "金門縣%",
+        "金門縣%"
+      ],
+      "rows": 21,
+      "gold_rows": 1
+    },
+    {
+      "id": "holdout-unit-heavy-oil-count",
+      "question": "燃料是重油的機組有幾部",
+      "outcome": "correct",
+      "rule_hit": false,
+      "source": "llm",
+      "error_code": null,
+      "llm_error": null,
+      "attempts": 1,
+      "seconds": 9.8,
+      "sql": "SELECT COUNT(*) AS \"機組數\" FROM v_unit WHERE \"燃料\" = ? LIMIT 200",
+      "params": [
+        "重油"
+      ],
+      "rows": 1,
+      "gold_rows": 1
+    },
+    {
+      "id": "holdout-unit-top3-capacity",
+      "question": "裝置容量最大的三部機組是哪些",
+      "outcome": "correct",
+      "rule_hit": false,
+      "source": "llm",
+      "error_code": null,
+      "llm_error": null,
+      "attempts": 1,
+      "seconds": 19.0,
+      "sql": "SELECT \"機組名\", \"裝置容量_萬瓩\" FROM v_unit WHERE \"裝置容量_萬瓩\" IS NOT NULL ORDER BY \"裝置容量_萬瓩\" DESC LIMIT 3",
+      "params": [],
+      "rows": 3,
+      "gold_rows": 3
+    },
+    {
+      "id": "holdout-unit-plant-earliest",
+      "question": "每座電廠最早商轉的日期",
+      "outcome": "wrong_result",
+      "rule_hit": false,
+      "source": "llm",
+      "error_code": null,
+      "llm_error": null,
+      "attempts": 1,
+      "seconds": 9.7,
+      "sql": "SELECT \"電廠\", \"商轉日期\" FROM v_unit WHERE \"電廠\" IN (SELECT DISTINCT \"電廠\" FROM v_unit) ORDER BY \"電廠\" LIMIT 200",
+      "params": [],
+      "rows": 175,
+      "gold_rows": 22
+    },
+    {
+      "id": "holdout-unit-hydro-plants",
+      "question": "有水力機組的電廠有幾座",
+      "outcome": "wrong_result",
+      "rule_hit": false,
+      "source": "llm",
+      "error_code": null,
+      "llm_error": null,
+      "attempts": 1,
+      "seconds": 11.2,
+      "sql": "SELECT COUNT(DISTINCT \"電廠\") FROM v_unit WHERE \"燃料\" = ? AND \"商轉日期精度\" = ? AND \"裝置容量_萬瓩\" > 0 LIMIT 200",
+      "params": [
+        "水",
+        "day"
+      ],
+      "rows": 1,
+      "gold_rows": 1
+    },
+    {
+      "id": "holdout-unit-plants-over-10-units",
+      "question": "機組超過10部的電廠",
+      "outcome": "correct",
+      "rule_hit": false,
+      "source": "llm",
+      "error_code": null,
+      "llm_error": null,
+      "attempts": 1,
+      "seconds": 15.7,
+      "sql": "SELECT \"電廠\", COUNT(*) AS \"機組數\" FROM v_unit GROUP BY \"電廠\" HAVING COUNT(*) > 10 ORDER BY COUNT(*) DESC LIMIT 20",
+      "params": [],
+      "rows": 6,
+      "gold_rows": 6
+    },
+    {
+      "id": "holdout-unit-largest-avg-plant",
+      "question": "平均每部機組裝置容量最大的電廠",
+      "outcome": "wrong_result",
+      "rule_hit": false,
+      "source": "llm",
+      "error_code": null,
+      "llm_error": null,
+      "attempts": 2,
+      "seconds": 27.3,
+      "sql": "SELECT \"電廠\", AVG(\"裝置容量_萬瓩\") AS \"平均裝置容量_萬瓩\" FROM v_unit GROUP BY \"電廠\" ORDER BY \"平均裝置容量_萬瓩\" DESC LIMIT 200",
+      "params": [],
+      "rows": 22,
+      "gold_rows": 1
+    },
+    {
+      "id": "holdout-unit-after-2000",
+      "question": "2000年（含）以後才商轉的機組有幾部",
+      "outcome": "wrong_result",
+      "rule_hit": false,
+      "source": "llm",
+      "error_code": null,
+      "llm_error": null,
+      "attempts": 1,
+      "seconds": 14.7,
+      "sql": "SELECT COUNT(*) AS \"機組數\" FROM v_unit WHERE \"商轉日期\" >= ? AND \"商轉日期精度\" = ? LIMIT 1",
+      "params": [
+        "2000-01-01",
+        "day"
+      ],
+      "rows": 1,
+      "gold_rows": 1
+    },
+    {
+      "id": "holdout-unit-penghu-count",
+      "question": "澎湖縣有幾部機組",
+      "outcome": "correct",
+      "rule_hit": false,
+      "source": "llm",
+      "error_code": null,
+      "llm_error": null,
+      "attempts": 1,
+      "seconds": 10.5,
+      "sql": "SELECT COUNT(*) AS \"機組數\" FROM v_unit WHERE \"縣市\" LIKE ? LIMIT 1",
+      "params": [
+        "澎湖縣%"
+      ],
+      "rows": 1,
+      "gold_rows": 1
+    },
+    {
+      "id": "holdout-peak-south-0701",
+      "question": "南部發電廠在2026年7月1日的尖峰出力合計",
+      "outcome": "correct",
+      "rule_hit": false,
+      "source": "llm",
+      "error_code": null,
+      "llm_error": null,
+      "attempts": 1,
+      "seconds": 11.4,
+      "sql": "SELECT \"日期\",\"機組欄位\",\"尖峰出力_萬瓩\" FROM v_peak WHERE \"日期\" = ? AND \"電廠\" = ? LIMIT 1",
+      "params": [
+        "2026-07-01",
+        "南部發電廠"
+      ],
+      "rows": 1,
+      "gold_rows": 1
+    },
+    {
+      "id": "holdout-re-largest-wind",
+      "question": "裝置容量最大的風力場站是哪一座",
+      "outcome": "wrong_result",
+      "rule_hit": false,
+      "source": "llm",
+      "error_code": null,
+      "llm_error": null,
+      "attempts": 1,
+      "seconds": 19.6,
+      "sql": "SELECT DISTINCT \"發電站\", \"縣市\", \"裝置容量_瓩\" FROM v_re_generation WHERE \"能源別\" = ? ORDER BY \"裝置容量_瓩\" DESC LIMIT 1",
+      "params": [
+        "陸域風力"
+      ],
+      "rows": 1,
+      "gold_rows": 1
+    },
+    {
+      "id": "holdout-unit-second-plant",
+      "question": "總裝置容量排名第二的電廠",
+      "outcome": "wrong_result",
+      "rule_hit": false,
+      "source": "llm",
+      "error_code": null,
+      "llm_error": null,
+      "attempts": 1,
+      "seconds": 26.9,
+      "sql": "SELECT \"電廠\", SUM(\"對應裝置容量_萬瓩\") AS \"總裝置容量_萬瓩\" FROM (SELECT DISTINCT SUBSTR(\"機組欄位\", 1, 2) AS \"電廠\", \"機組欄位\", \"對應裝置容量_萬瓩\" FROM v_peak WHERE \"類別\" = ?) GROUP BY \"電廠\" ORDER BY \"總裝置容量_萬瓩\" DESC LIMIT 1 OFFSET 1",
+      "params": [
+        "核能"
+      ],
+      "rows": 1,
+      "gold_rows": 1
+    },
+    {
+      "id": "holdout-unit-multi-fuel-count",
+      "question": "有兩種以上燃料的電廠有幾座",
+      "outcome": "wrong_result",
+      "rule_hit": false,
+      "source": "llm",
+      "error_code": null,
+      "llm_error": null,
+      "attempts": 1,
+      "seconds": 11.0,
+      "sql": "SELECT \"電廠\", COUNT(DISTINCT \"燃料\") AS \"燃料種類\" FROM v_unit GROUP BY \"電廠\" HAVING COUNT(DISTINCT \"燃料\") > 1 LIMIT 100",
+      "params": [],
+      "rows": 4,
+      "gold_rows": 1
+    },
+    {
+      "id": "holdout-unit-month-precision-plants",
+      "question": "商轉日期只到月份的機組分布在哪些電廠",
+      "outcome": "wrong_result",
+      "rule_hit": false,
+      "source": "llm",
+      "error_code": null,
+      "llm_error": null,
+      "attempts": 1,
+      "seconds": 7.4,
+      "sql": "SELECT \"電廠\" FROM v_unit WHERE \"商轉日期精度\" = ? ORDER BY \"電廠\" LIMIT 5",
+      "params": [
+        "month"
+      ],
+      "rows": 5,
+      "gold_rows": 10
+    },
+    {
+      "id": "holdout-unit-two-plants-count",
+      "question": "協和發電廠和林口發電廠各有幾部機組",
+      "outcome": "wrong_result",
+      "rule_hit": false,
+      "source": "llm",
+      "error_code": null,
+      "llm_error": null,
+      "attempts": 1,
+      "seconds": 13.5,
+      "sql": "SELECT COUNT(*) AS \"機組數\" FROM v_unit WHERE \"電廠\" IN (?, ?) LIMIT 1",
+      "params": [
+        "協和發電廠",
+        "林口發電廠"
+      ],
+      "rows": 1,
+      "gold_rows": 2
+    },
+    {
+      "id": "holdout-unit-50-to-80",
+      "question": "裝置容量在50萬瓩以上、80萬瓩以下的機組有幾部",
+      "outcome": "correct",
+      "rule_hit": false,
+      "source": "llm",
+      "error_code": null,
+      "llm_error": null,
+      "attempts": 1,
+      "seconds": 16.1,
+      "sql": "SELECT COUNT(*) AS \"機組數\" FROM v_unit WHERE \"裝置容量_萬瓩\" BETWEEN ? AND ? LIMIT 1",
+      "params": [
+        50,
+        80
+      ],
+      "rows": 1,
+      "gold_rows": 1
+    },
+    {
+      "id": "holdout-unit-plant-fuel-kinds",
+      "question": "每座電廠有幾種燃料",
+      "outcome": "correct",
+      "rule_hit": false,
+      "source": "llm",
+      "error_code": null,
+      "llm_error": null,
+      "attempts": 1,
+      "seconds": 10.7,
+      "sql": "SELECT \"電廠\", COUNT(DISTINCT \"燃料\") AS \"燃料種類數\" FROM v_unit GROUP BY \"電廠\" ORDER BY \"燃料種類數\" DESC LIMIT 50",
+      "params": [],
+      "rows": 22,
+      "gold_rows": 22
+    },
+    {
+      "id": "holdout-peak-renewable-count",
+      "question": "2026年7月20日類別為再生的機組欄位有幾個",
+      "outcome": "correct",
+      "rule_hit": false,
+      "source": "llm",
+      "error_code": null,
+      "llm_error": null,
+      "attempts": 1,
+      "seconds": 8.6,
+      "sql": "SELECT COUNT(*) FROM v_peak WHERE \"日期\" = ? AND \"類別\" = ? LIMIT 200",
+      "params": [
+        "2026-07-20",
+        "再生"
+      ],
+      "rows": 1,
+      "gold_rows": 1
+    },
+    {
+      "id": "holdout-outage-gas-count",
+      "question": "燃氣機組的歲修總共有幾筆",
+      "outcome": "wrong_result",
+      "rule_hit": false,
+      "source": "llm",
+      "error_code": null,
+      "llm_error": null,
+      "attempts": 1,
+      "seconds": 9.6,
+      "sql": "SELECT COUNT(*) AS \"歲修筆數\" FROM v_outage WHERE \"燃料\" = ? AND \"日期狀態\" = ? AND \"對齊狀態\" = ? LIMIT 1",
+      "params": [
+        "燃氣",
+        "valid",
+        "matched"
+      ],
+      "rows": 1,
+      "gold_rows": 1
+    }
+  ]
+}

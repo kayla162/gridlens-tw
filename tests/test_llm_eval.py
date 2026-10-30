@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from eval.llm_eval import BENCHMARK, _rule_misses, cell_equal, result_matches
+from eval.llm_eval import QUESTION_SETS, _rule_misses, cell_equal, result_matches
 from ingest.build_db import build_database
 
 
@@ -37,12 +37,13 @@ def test_row_counts_and_every_group_must_match() -> None:
 
 
 @pytest.mark.integration
-def test_every_benchmark_question_is_one_the_rules_cannot_answer(tmp_path) -> None:
+@pytest.mark.parametrize("questions", sorted(QUESTION_SETS.values()))
+def test_every_benchmark_question_is_one_the_rules_cannot_answer(tmp_path, questions) -> None:
     """規則接得住的題目量不到 LLM；規則變強之後要把題目換掉，而不是讓分數悄悄變好看。"""
 
     database = tmp_path / "power.db"
     build_database(database)
-    items = json.loads(BENCHMARK.read_text(encoding="utf-8"))
+    items = json.loads(questions.read_text(encoding="utf-8"))
 
     hits = _rule_misses(database, items)
 

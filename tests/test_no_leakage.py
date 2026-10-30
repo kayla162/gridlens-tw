@@ -63,4 +63,6 @@ def test_benchmark_directory_contains_only_expected_versioned_json() -> None:
         "realtime_questions.json",
         # LLM 路徑題（規則接不住的問題）：python -m eval.llm_eval 評測。
         "llm_questions.json",
+        # 沒拿來調整過的 LLM 題（CP-100）：--questions holdout。
+        "llm_holdout_questions.json",
     }

@@ -169,7 +169,7 @@ uv run python -m ingest.realtime history download               # 下載最新 d
 
 | provider | 推理 | 規則接不住的 20 題 | 每題時間 | 逾時 |
 |---|---|---|---|---|
-| `ollama`（建議） | 關 | 答對 15（CP-099，兩次重跑相同） | 中位數 16 秒 | 180 秒 |
+| `ollama`（建議） | 關 | 答對 15（CP-099）；沒調過的另 20 題答對 9（CP-100） | 中位數 16 秒 | 180 秒 |
 | `ollama-reasoning` | 開 | 答對 10（CP-090，SQL 修正前） | 中位數約 6 分鐘，7 題寫不完 | 600 秒 |
 
 數字來自 `python -m eval.llm_eval`（見 README「本機 LLM 評測」），在 GTX 1050 Ti（4 GB）上量的：`qwen3:8b` 放不進顯示記憶體，
