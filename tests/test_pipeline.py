@@ -305,7 +305,8 @@ def test_a_retry_shows_the_model_what_it_wrote_last_time() -> None:
     assert response.success
     assert len(llm.calls) == 2
     retry = json.loads(llm.calls[1])
-    assert retry["previous_attempt_sql"] == "SELECT * FROM sqlite_master"
+    # 還給模型的是守門實際擋下的那一句：sql_repair 已經先補上 LIMIT。
+    assert retry["previous_attempt_sql"] == "SELECT * FROM sqlite_master LIMIT 200"
     assert "sqlite_master" in retry["previous_attempt_error"]
 
 

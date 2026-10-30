@@ -9,7 +9,12 @@ from threading import RLock
 from time import perf_counter
 from typing import Any, Protocol
 
-from text2sql.answer_checks import check_result, check_sql, coerce_numeric_params
+from text2sql.answer_checks import (
+    EVERY_GROUP_WORDS,
+    check_result,
+    check_sql,
+    coerce_numeric_params,
+)
 from text2sql.corpus import load_corpus
 from text2sql.entities import Entities, extract_entities
 from text2sql.llm import (
@@ -26,6 +31,7 @@ from text2sql.router import missing_parameter_clarification, route, suggest_scop
 from text2sql.scope_guard import ScopeError, ScopeGuard
 from text2sql.semantic_guard import SemanticDecision
 from text2sql.sql_guard import SqlGuard, SqlGuardResult
+from text2sql.sql_repair import repair_llm_query
 
 RunSql = Callable[[str, tuple[object, ...]], tuple[list[str], list[tuple[object, ...]]]]
 
@@ -365,6 +371,17 @@ class Text2SQLPipeline:
                     llm_failure = (category, error, attempt)
                     break
                 self._trace(trace, "generate", started, attempt=attempt)
+                # 本機模型收到錯誤常原樣再送一次；寫法唯一的錯直接改好，不花重試（sql_repair）。
+                started = perf_counter()
+                repair = repair_llm_query(
+                    generated.sql,
+                    generated.params,
+                    column_values=self.column_values,
+                    max_rows=self.sql_guard.max_rows,
+                )
+                if repair.notes:
+                    generated = repair.query
+                    self._trace(trace, "repair", started, attempt=attempt, notes=list(repair.notes))
 
             started = perf_counter()
             guard_result: SqlGuardResult = self.sql_guard.validate(generated.sql, generated.params)
@@ -438,6 +455,7 @@ class Text2SQLPipeline:
                     rows,
                     asks_top_n=entities.top_n is not None,
                     max_rows=self.sql_guard.max_rows,
+                    asks_every_group=any(word in question for word in EVERY_GROUP_WORDS),
                 )
                 if issue is not None:
                     self._trace(trace, "result_check", started, attempt=attempt, code=issue.code)

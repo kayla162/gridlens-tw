@@ -27,6 +27,8 @@ _NUMBER = re.compile(r"^-?\d+(?:\.\d+)?$")
 _COMPARISONS = (exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE, exp.Between, exp.In)
 _EQUALITIES = (exp.EQ, exp.NEQ, exp.In)
 MAX_LISTED_VALUES = 25
+# 問句裡這些字表示要每一組都列出來，不是取第一名。
+EVERY_GROUP_WORDS = ("各", "每")
 
 
 @dataclass(frozen=True)
@@ -127,11 +129,14 @@ def check_sql(
     return None
 
 
-def _limit_of_a_listing(sql: str) -> int | None:
+def _limit_of_a_listing(sql: str, *, asks_every_group: bool = False) -> int | None:
     """LIMIT of a query meant to list everything; None for intentional rankings.
 
     `ORDER BY … LIMIT 1`（最高的是哪一天）或沒有 GROUP BY 的排序是刻意取前幾名，結果剛好
     等於 LIMIT 是正常的；分組或沒排序的查詢被 LIMIT 切掉才是截斷。
+
+    問句說「各」「每」時，分組的 `LIMIT 1` 也算截斷：評測裡「各燃料別各有幾部機組」寫成
+    `GROUP BY "燃料" ORDER BY … LIMIT 1`，只回機組最多的那一種，看起來是完整答案。
     """
 
     try:
@@ -142,12 +147,20 @@ def _limit_of_a_listing(sql: str) -> int | None:
     if not (isinstance(expression, exp.Literal) and expression.is_int):
         return None
     limit = int(expression.this)
-    ranking = tree.args.get("order") is not None and tree.args.get("group") is None
+    grouped = tree.args.get("group") is not None
+    if asks_every_group and grouped:
+        return limit
+    ranking = tree.args.get("order") is not None and not grouped
     return None if limit <= 1 or ranking else limit
 
 
 def check_result(
-    sql: str, rows: Sequence[Sequence[object]], *, asks_top_n: bool, max_rows: int
+    sql: str,
+    rows: Sequence[Sequence[object]],
+    *,
+    asks_top_n: bool,
+    max_rows: int,
+    asks_every_group: bool = False,
 ) -> CheckIssue | None:
     """Problems visible only after running it."""
 
@@ -157,7 +170,7 @@ def check_result(
             "結果是 0 筆（或聚合結果全是 NULL）。請檢查條件值是否真的存在於資料、"
             "數字是否以數值比較、部分比對是否用了 LIKE 與 %；確定真的沒有資料就照原樣回傳。",
         )
-    limit = _limit_of_a_listing(sql)
+    limit = _limit_of_a_listing(sql, asks_every_group=asks_every_group)
     if limit is not None and len(rows) == limit and limit < max_rows and not asks_top_n:
         return CheckIssue(
             "RESULT_TRUNCATED",
@@ -167,4 +180,10 @@ def check_result(
     return None
 
 
-__all__ = ["CheckIssue", "check_result", "check_sql", "coerce_numeric_params"]
+__all__ = [
+    "EVERY_GROUP_WORDS",
+    "CheckIssue",
+    "check_result",
+    "check_sql",
+    "coerce_numeric_params",
+]

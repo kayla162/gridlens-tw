@@ -169,10 +169,11 @@ uv run python -m ingest.realtime history download               # 下載最新 d
 
 | provider | 推理 | 規則接不住的 20 題 | 每題時間 | 逾時 |
 |---|---|---|---|---|
-| `ollama`（建議） | 關 | 答對 6 | 中位數 11 秒 | 120 秒 |
-| `ollama-reasoning` | 開 | 答對 10 | 中位數約 6 分鐘，7 題寫不完 | 600 秒 |
+| `ollama`（建議） | 關 | 答對 14（CP-097） | 中位數 47 秒 | 120 秒 |
+| `ollama-reasoning` | 開 | 答對 10（CP-090，SQL 修正前） | 中位數約 6 分鐘，7 題寫不完 | 600 秒 |
 
-數字來自 `python -m eval.llm_eval`（見 README「本機 LLM 評測」）。兩種模式都會檢查 LLM 寫的 SQL：值不在欄位的值清單、
+數字來自 `python -m eval.llm_eval`（見 README「本機 LLM 評測」），在 GTX 1050 Ti（4 GB）上量的：`qwen3:8b` 放不進顯示記憶體，
+有一部分在 CPU 上跑，每題秒數會隨機器負載變動。寫法唯一的錯（`LIMIT ?`、多送的空白參數、漏掉 LIMIT、`縣市 = '高雄市'` 這類說法）在守門之前直接修好，不再耗一輪重試。兩種模式都會檢查 LLM 寫的 SQL：值不在欄位的值清單、
 `LIKE` 沒有萬用字元、數字被當成字串、0 筆或被 LIMIT 截斷時，把原因交回模型重寫。
 
 `auto` 模式每 30 秒最多確認一次 Ollama 在不在（只問 `/v1/models`，1 秒逾時）；在就用本機 LLM，不在就退回離線規則。
