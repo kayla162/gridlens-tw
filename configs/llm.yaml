@@ -20,7 +20,7 @@ max_attempts: 3
 # 換模型用 OLLAMA_MODEL。
 #
 # 兩種模式，同一個模型，差在推理（thinking）開不開。數字來自 eval.llm_eval：規則接不住的 20 題：
-#   ollama            推理關：加上 SQL 修正後答對 13/20，每題中位數 44 秒（CP-098）。預設用這個。
+#   ollama            推理關：加上 SQL 修正後答對 15/20，每題中位數 16 秒（CP-099）。預設用這個。
 #   ollama-reasoning  推理開：修正前答對 10/20，每題中位數約 6 分鐘，7 題 900 秒內寫不完（CP-090）。
 providers:
   ollama:
@@ -29,7 +29,8 @@ providers:
     default_model: qwen3:8b
     structured_output: true
     temperature: 0
-    request_timeout_seconds: 120
+    # GTX 1050 Ti（4 GB）上，機器忙時每題中位數約 45 秒、最慢超過 120 秒；120 秒逾時會把慢一點的題目切掉（CP-099）。
+    request_timeout_seconds: 180
     # Ollama 0.40 的 OpenAI 相容端點認 reasoning_effort: none（think: false 不認）；
     # 實測同一個問題 161 秒、2432 tokens → 18 秒、327 tokens。
     extra_body:

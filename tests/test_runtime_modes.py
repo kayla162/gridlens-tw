@@ -86,7 +86,7 @@ def test_local_mode_uses_the_configured_ollama_endpoint(database: Path) -> None:
     sent = StubLocalLLM.options[-1]
     assert sent["base_url"] == "http://127.0.0.1:11434/v1"
     assert sent["model"] == "qwen3:8b"
-    assert sent["timeout_seconds"] == 120.0
+    assert sent["timeout_seconds"] == 180.0
     assert sent["extra_body"] == {"reasoning_effort": "none"}
     assert sent["temperature"] == 0.0
 

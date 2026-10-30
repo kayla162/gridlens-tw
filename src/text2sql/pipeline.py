@@ -378,6 +378,7 @@ class Text2SQLPipeline:
                     generated.params,
                     column_values=self.column_values,
                     max_rows=self.sql_guard.max_rows,
+                    question=question,
                 )
                 if repair.notes:
                     generated = repair.query

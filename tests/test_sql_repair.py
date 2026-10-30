@@ -100,3 +100,64 @@ def test_unparsable_sql_is_passed_through_for_the_guard_to_reject() -> None:
     repair = _repair("SELEC nonsense", [])
 
     assert repair.query.sql == "SELEC nonsense"
+
+
+def test_a_county_question_grouped_by_township_is_grouped_by_county() -> None:
+    sql = (
+        'SELECT "縣市", SUM("裝置容量_瓩") AS kw FROM v_unit '
+        'GROUP BY "縣市" ORDER BY "縣市" LIMIT 100'
+    )
+
+    repair = repair_llm_query(
+        sql, [], column_values=VALUES, max_rows=200, question="各縣市的總裝置容量（瓩）"
+    )
+
+    assert repair.query.sql == (
+        'SELECT SUBSTRING("縣市", 1, 3) AS "縣市", SUM("裝置容量_瓩") AS kw FROM v_unit '
+        'GROUP BY SUBSTRING("縣市", 1, 3) ORDER BY SUBSTRING("縣市", 1, 3) LIMIT 100'
+    )
+
+
+def test_township_questions_and_other_views_keep_their_grouping() -> None:
+    township = 'SELECT "縣市", COUNT(*) FROM v_unit GROUP BY "縣市" LIMIT 200'
+    renewable = 'SELECT "縣市", SUM("發電量_度") FROM v_re_generation GROUP BY "縣市" LIMIT 200'
+
+    def notes(sql: str, question: str) -> tuple[str, ...]:
+        return repair_llm_query(
+            sql, [], column_values=VALUES, max_rows=200, question=question
+        ).notes
+
+    assert notes(township, "各鄉鎮有幾部機組") == ()
+    assert notes(renewable, "各縣市的再生能源發電量") == ()
+    assert notes(township, "") == (), "沒有問句就不猜"
+
+
+def test_string_literals_become_parameters_in_text_order() -> None:
+    sql = (
+        'SELECT SUM("發電量_度") FROM v_re_generation '
+        'WHERE "縣市" = ? AND "能源別" LIKE \'%風力%\' AND "年度" = ? LIMIT 20'
+    )
+
+    repair = _repair(sql, ["澎湖縣", 2025])
+
+    assert "'" not in repair.query.sql
+    assert repair.query.params == ("澎湖縣", "%風力%", 2025)
+    assert SqlGuard().validate(repair.query.sql, repair.query.params).allowed
+
+
+def test_group_keys_left_out_of_the_select_are_added_in_front() -> None:
+    repair = _repair('SELECT SUM("裝置容量_瓩") FROM v_unit GROUP BY "燃料" LIMIT 50', [])
+
+    assert (
+        repair.query.sql == 'SELECT "燃料", SUM("裝置容量_瓩") FROM v_unit GROUP BY "燃料" LIMIT 50'
+    )
+
+
+def test_group_keys_already_selected_or_aliased_are_not_repeated() -> None:
+    for sql in (
+        'SELECT "燃料", COUNT(*) FROM v_unit GROUP BY "燃料" LIMIT 50',
+        'SELECT "燃料" AS f, COUNT(*) FROM v_unit GROUP BY "燃料" LIMIT 50',
+        'SELECT SUBSTR("日期", 1, 7), AVG("尖峰負載_萬瓩") FROM v_system '
+        'GROUP BY SUBSTR("日期", 1, 7) LIMIT 30',
+    ):
+        assert _repair(sql, []).notes == (), sql
