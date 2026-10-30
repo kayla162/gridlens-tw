@@ -2,6 +2,21 @@
 
 > 這份檔案在每個可驗證、可回退的儲存點更新。回退前需保留使用者原有的未提交變更。
 
+## CP-095 — 補上 MIT 授權
+
+- 時間：2026-10-30 +08:00
+- 狀態：已完成
+- 分支：`docs/add-mit-license`
+- 起點：缺口盤點列出「沒有 `LICENSE` 檔」：README 與 ATTRIBUTION 都寫著程式不得推定採用任何開源授權，要公開或交專題時別人沒有授權可依循。
+- 決定：使用者選 MIT，版權聲明寫 `Copyright (c) 2026 kayla162`。
+- 變更：
+  - 新增 `LICENSE`（MIT 全文）。
+  - README「授權」與 ATTRIBUTION「專案程式與自寫文件」改寫為程式採 MIT；台電資料仍依政府資料開放授權條款，不因 MIT 改變。
+  - `pyproject.toml` 加 `license = "MIT"`、`license-files = ["LICENSE"]`；SPDX 字串形式要 setuptools 77 起才認，建置需求從 `>=75` 提到 `>=77`。
+- 驗證：建出的 wheel 帶 `License-Expression: MIT` 與 `licenses/LICENSE`；pytest、ruff check、ruff format --check 通過。
+- 注意：git 紀錄裡多數 commit 由其他成員撰寫（lee851104 等）。對外公開前宜取得他們同意，或把版權人改成全體貢獻者。
+- 回退：`git revert` 本次 commit；`LICENSE` 會一併移除，README 與 ATTRIBUTION 回到「未提供 LICENSE」的說法。
+
 ## CP-094 — RAG 對照：關掉檢索範例，答對數不變、換了一批題目
 
 - 時間：2026-10-29 +08:00
