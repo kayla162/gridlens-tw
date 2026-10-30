@@ -1,8 +1,8 @@
 [
-  {"id": "llm-unit-county-count", "question": "各縣市各有幾部機組", "gold_sql": "SELECT \"縣市\", COUNT(*) AS n FROM v_unit GROUP BY \"縣市\"", "match": [["縣市"], ["n"]]},
+  {"id": "llm-unit-county-count", "question": "各縣市各有幾部機組", "gold_sql": "SELECT SUBSTR(\"縣市\", 1, 3) AS county, COUNT(*) AS n FROM v_unit GROUP BY county", "match": [["county"], ["n"]]},
   {"id": "llm-unit-fuel-count", "question": "各燃料別各有幾部機組", "gold_sql": "SELECT \"燃料\", COUNT(*) AS n FROM v_unit GROUP BY \"燃料\"", "match": [["燃料"], ["n"]]},
   {"id": "llm-unit-plant-count", "question": "每座電廠的機組數，由多到少排列", "gold_sql": "SELECT \"電廠\", COUNT(*) AS n FROM v_unit GROUP BY \"電廠\"", "match": [["電廠"], ["n"]]},
-  {"id": "llm-unit-county-capacity", "question": "各縣市的總裝置容量（瓩）", "gold_sql": "SELECT \"縣市\", SUM(\"裝置容量_瓩\") AS kw, SUM(\"裝置容量_萬瓩\") AS wkw FROM v_unit GROUP BY \"縣市\"", "match": [["縣市"], ["kw", "wkw"]]},
+  {"id": "llm-unit-county-capacity", "question": "各縣市的總裝置容量（瓩）", "gold_sql": "SELECT SUBSTR(\"縣市\", 1, 3) AS county, SUM(\"裝置容量_瓩\") AS kw, SUM(\"裝置容量_萬瓩\") AS wkw FROM v_unit GROUP BY county", "match": [["county"], ["kw", "wkw"]]},
   {"id": "llm-unit-kaohsiung-capacity", "question": "高雄市的機組總裝置容量", "gold_sql": "SELECT SUM(\"裝置容量_瓩\") AS kw, SUM(\"裝置容量_萬瓩\") AS wkw FROM v_unit WHERE \"縣市\" LIKE '高雄市%'", "match": [["kw", "wkw"]]},
   {"id": "llm-unit-newtaipei-plants", "question": "新北市有哪些電廠", "gold_sql": "SELECT DISTINCT \"電廠\" FROM v_unit WHERE \"縣市\" LIKE '新北市%'", "match": [["電廠"]]},
   {"id": "llm-unit-oldest", "question": "商轉日期最早的兩部機組", "gold_sql": "SELECT \"機組名\" FROM v_unit ORDER BY \"商轉日期\" LIMIT 2", "match": [["機組名"]]},

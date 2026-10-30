@@ -2,6 +2,24 @@
 
 > 這份檔案在每個可驗證、可回退的儲存點更新。回退前需保留使用者原有的未提交變更。
 
+## CP-098 — 題庫兩題「各縣市」改按縣市分組：本機模型 13／20
+
+- 時間：2026-10-30 +08:00
+- 狀態：已完成
+- 分支：`fix/county-benchmark-answers`
+- 起點：CP-097「待決定」。`llm-unit-county-count`、`llm-unit-county-capacity` 的標準答案直接 `GROUP BY "縣市"`，
+  而 v_unit 的縣市含鄉鎮，等於按 21 個鄉鎮分組，與 CP-061 的教訓和語料規則 `county-granularity` 相反。使用者決定修正。
+- 變更：兩題標準答案改成 `SUBSTR("縣市", 1, 3) AS county … GROUP BY county`（13 組），`match` 的欄名跟著改成 `county`。
+  「花蓮市」在資料裡沒有縣名，按規則取前三字仍是「花蓮市」，自成一組；這是資料本身的寫法，標準答案照規則保留。
+- 驗證：
+  - 先拿 CP-097 那一輪模型寫的 SQL 對新標準重算：14 → 13。「各縣市的總裝置容量」原本照錯法按鄉鎮分組而被算對，現在判錯；
+    「各縣市各有幾部機組」那輪逾時，不受影響。
+  - 重跑 `eval.llm_eval --label county_fix`：答對 13、答錯 6、沒有回答 1，與重算一致，其餘 19 題結果和上一輪完全相同。
+  - pytest、ruff 通過。
+- 剩下的：模型仍會把「各縣市」寫成 `GROUP BY "縣市"`，規則說明寫了也沒照做。這是理解題意的錯，`sql_repair` 刻意不改寫查詢結構。
+- 文件：README、SERVING、`configs/llm.yaml` 的數字改成 13/20；`reports/llm_eval_ollama_repair.*` 保留為舊標準下的紀錄。
+- 回退：`git revert` 本次 commit。
+
 ## CP-097 — LLM 寫的 SQL 先修再守門：本機模型答對 5 → 14／20
 
 - 時間：2026-10-30 +08:00
@@ -53,7 +71,7 @@
 
 - 題庫 `llm-unit-county-count`、`llm-unit-county-capacity` 的標準答案直接 `GROUP BY "縣市"`，等於按鄉鎮分組，
   與 CP-061 記下的教訓和語料規則 `county-granularity`（要 `SUBSTR("縣市",1,3)`）相反。模型照規則寫會被判錯，
-  照「任何人都會寫的錯法」寫反而算對（這次「各縣市的總裝置容量」就是這樣答對的）。題庫要不要改，交給使用者決定，本次沒動。
+  照「任何人都會寫的錯法」寫反而算對（這次「各縣市的總裝置容量」就是這樣答對的）。題庫要不要改，交給使用者決定，本次沒動。（已在 CP-098 改正，改正後為 13/20。）
 
 - 回退：`git revert` 本次 commit，並重建 `corpus/index.json`（`uv run python -m text2sql.corpus`）。
 
