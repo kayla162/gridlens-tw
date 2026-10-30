@@ -9,6 +9,11 @@
 
     uv run --extra local python -m eval.llm_eval --timeout 900
     uv run --extra local python -m eval.llm_eval --no-rag --label no_rag   # 關掉檢索的對照
+    uv run --extra local python -m eval.llm_eval --questions holdout --label holdout
+
+`benchmarks/llm_holdout_questions.json` 是 CP-100 另外寫的 20 題：CP-097～099 的修正都是照
+`llm_questions.json` 的錯誤設計的，換一批沒看過的題目才知道效果是不是只對那 20 題有效。
+之後也不應該照這份的錯誤去調。
 """
 
 from __future__ import annotations
@@ -29,6 +34,8 @@ from ingest.validate import PROJECT_ROOT
 from serving.runtime import PROVIDER_ENV, build_runtime
 
 BENCHMARK = PROJECT_ROOT / "benchmarks" / "llm_questions.json"
+HOLDOUT = PROJECT_ROOT / "benchmarks" / "llm_holdout_questions.json"
+QUESTION_SETS = {"main": BENCHMARK, "holdout": HOLDOUT}
 
 
 def _number(value: object) -> float | None:
@@ -103,8 +110,9 @@ def evaluate(
     extra_body: dict[str, Any] | None = None,
     label: str | None = None,
     rag: bool = True,
+    questions: Path = BENCHMARK,
 ) -> dict[str, Any]:
-    items = json.loads(BENCHMARK.read_text(encoding="utf-8"))
+    items = json.loads(questions.read_text(encoding="utf-8"))
     rule_hits = _rule_misses(database, items)
     os.environ[PROVIDER_ENV] = provider
     runtime = build_runtime(
@@ -160,6 +168,7 @@ def evaluate(
         "label": label,
         "extra_body": getattr(runtime.pipeline.llm, "extra_body", None),
         "rag": rag,
+        "questions_file": questions.name,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "questions": len(items),
         "measured": len(measured),
@@ -186,7 +195,8 @@ def write_reports(report: dict[str, Any], directory: Path) -> tuple[Path, Path]:
         f"> provider 額外參數：`{json.dumps(report.get('extra_body') or {}, ensure_ascii=False)}`；"
         f"RAG 範例：{'開' if report.get('rag', True) else '關'}",
         "",
-        f"> 產生時間 {report['generated_at']}。題庫 `benchmarks/llm_questions.json`："
+        f"> 產生時間 {report['generated_at']}。"
+        f"題庫 `benchmarks/{report.get('questions_file', BENCHMARK.name)}`："
         "只收離線規則接不住、但資料答得出來的問題；以 gold SQL 的執行結果比對（不看欄名與順序）。",
         "",
         "| 指標 | 值 |",
@@ -240,6 +250,12 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="每次呼叫 LLM 的逾時秒數；預設用 llm.yaml。本機模型慢，量準確率時要放寬，速度另外看",
     )
+    parser.add_argument(
+        "--questions",
+        choices=sorted(QUESTION_SETS),
+        default="main",
+        help="main：llm_questions.json；holdout：沒拿來調整過的另一批題目",
+    )
     parser.add_argument("--database", type=Path, default=PROJECT_ROOT / "data/processed/power.db")
     parser.add_argument("--out", type=Path, default=PROJECT_ROOT / "reports")
     args = parser.parse_args(argv)
@@ -251,6 +267,7 @@ def main(argv: list[str] | None = None) -> int:
         extra_body=json.loads(args.extra_body) if args.extra_body is not None else None,
         label=args.label,
         rag=not args.no_rag,
+        questions=QUESTION_SETS[args.questions],
     )
     json_path, markdown_path = write_reports(report, args.out)
     print(

@@ -1,0 +1,22 @@
+[
+  {"id": "holdout-unit-plant-capacity", "question": "各電廠的總裝置容量（萬瓩）", "gold_sql": "SELECT \"電廠\", SUM(\"裝置容量_萬瓩\") AS wkw FROM v_unit GROUP BY \"電廠\"", "match": [["電廠"], ["wkw"]]},
+  {"id": "holdout-unit-kinmen-plants", "question": "金門縣有哪些電廠", "gold_sql": "SELECT DISTINCT \"電廠\" FROM v_unit WHERE \"縣市\" LIKE '金門縣%'", "match": [["電廠"]]},
+  {"id": "holdout-unit-heavy-oil-count", "question": "燃料是重油的機組有幾部", "gold_sql": "SELECT COUNT(*) AS n FROM v_unit WHERE \"燃料\" = '重油'", "match": [["n"]]},
+  {"id": "holdout-unit-top3-capacity", "question": "裝置容量最大的三部機組是哪些", "gold_sql": "SELECT \"機組名\" FROM v_unit ORDER BY \"裝置容量_瓩\" DESC LIMIT 3", "match": [["機組名"]]},
+  {"id": "holdout-unit-plant-earliest", "question": "每座電廠最早商轉的日期", "gold_sql": "SELECT \"電廠\", MIN(\"商轉日期\") AS first FROM v_unit GROUP BY \"電廠\"", "match": [["電廠"], ["first"]]},
+  {"id": "holdout-unit-hydro-plants", "question": "有水力機組的電廠有幾座", "gold_sql": "SELECT COUNT(DISTINCT \"電廠\") AS n FROM v_unit WHERE \"燃料\" = '水'", "match": [["n"]]},
+  {"id": "holdout-unit-plants-over-10-units", "question": "機組超過10部的電廠", "gold_sql": "SELECT \"電廠\" FROM v_unit GROUP BY \"電廠\" HAVING COUNT(*) > 10", "match": [["電廠"]]},
+  {"id": "holdout-unit-largest-avg-plant", "question": "平均每部機組裝置容量最大的電廠", "gold_sql": "SELECT \"電廠\" FROM v_unit GROUP BY \"電廠\" ORDER BY AVG(\"裝置容量_瓩\") DESC LIMIT 1", "match": [["電廠"]]},
+  {"id": "holdout-unit-after-2000", "question": "2000年（含）以後才商轉的機組有幾部", "gold_sql": "SELECT COUNT(*) AS n FROM v_unit WHERE \"商轉日期\" >= '2000-01-01'", "match": [["n"]]},
+  {"id": "holdout-unit-penghu-count", "question": "澎湖縣有幾部機組", "gold_sql": "SELECT COUNT(*) AS n FROM v_unit WHERE \"縣市\" LIKE '澎湖縣%'", "match": [["n"]]},
+  {"id": "holdout-peak-south-0701", "question": "南部發電廠在2026年7月1日的尖峰出力合計", "gold_sql": "SELECT SUM(\"尖峰出力_萬瓩\") AS total FROM v_peak WHERE \"電廠\" = '南部發電廠' AND \"日期\" = '2026-07-01'", "match": [["total"]]},
+  {"id": "holdout-re-largest-wind", "question": "裝置容量最大的風力場站是哪一座", "gold_sql": "SELECT \"發電站\" FROM v_re_generation WHERE \"能源別\" LIKE '%風力' ORDER BY \"裝置容量_瓩\" DESC LIMIT 1", "match": [["發電站"]]},
+  {"id": "holdout-unit-second-plant", "question": "總裝置容量排名第二的電廠", "gold_sql": "SELECT \"電廠\" FROM v_unit GROUP BY \"電廠\" ORDER BY SUM(\"裝置容量_瓩\") DESC LIMIT 1 OFFSET 1", "match": [["電廠"]]},
+  {"id": "holdout-unit-multi-fuel-count", "question": "有兩種以上燃料的電廠有幾座", "gold_sql": "SELECT COUNT(*) AS n FROM (SELECT \"電廠\" FROM v_unit GROUP BY \"電廠\" HAVING COUNT(DISTINCT \"燃料\") >= 2)", "match": [["n"]]},
+  {"id": "holdout-unit-month-precision-plants", "question": "商轉日期只到月份的機組分布在哪些電廠", "gold_sql": "SELECT DISTINCT \"電廠\" FROM v_unit WHERE \"商轉日期精度\" = 'month'", "match": [["電廠"]]},
+  {"id": "holdout-unit-two-plants-count", "question": "協和發電廠和林口發電廠各有幾部機組", "gold_sql": "SELECT \"電廠\", COUNT(*) AS n FROM v_unit WHERE \"電廠\" IN ('協和發電廠', '林口發電廠') GROUP BY \"電廠\"", "match": [["電廠"], ["n"]]},
+  {"id": "holdout-unit-50-to-80", "question": "裝置容量在50萬瓩以上、80萬瓩以下的機組有幾部", "gold_sql": "SELECT COUNT(*) AS n FROM v_unit WHERE \"裝置容量_萬瓩\" BETWEEN 50 AND 80", "match": [["n"]]},
+  {"id": "holdout-unit-plant-fuel-kinds", "question": "每座電廠有幾種燃料", "gold_sql": "SELECT \"電廠\", COUNT(DISTINCT \"燃料\") AS n FROM v_unit GROUP BY \"電廠\"", "match": [["電廠"], ["n"]]},
+  {"id": "holdout-peak-renewable-count", "question": "2026年7月20日類別為再生的機組欄位有幾個", "gold_sql": "SELECT COUNT(*) AS n FROM v_peak WHERE \"日期\" = '2026-07-20' AND \"類別\" = '再生'", "match": [["n"]]},
+  {"id": "holdout-outage-gas-count", "question": "燃氣機組的歲修總共有幾筆", "gold_sql": "SELECT COUNT(*) AS n FROM v_outage WHERE \"燃料\" = '燃氣'", "match": [["n"]]}
+]
