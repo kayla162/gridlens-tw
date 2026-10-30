@@ -219,7 +219,7 @@ def test_auto_falls_back_to_offline_rules_without_ollama(
 
 @pytest.mark.parametrize(
     ("provider", "reasoning_off", "timeout"),
-    [("ollama", True, 120.0), ("ollama-reasoning", False, 600.0)],
+    [("ollama", True, 180.0), ("ollama-reasoning", False, 600.0)],
 )
 def test_the_two_ollama_modes_differ_only_in_reasoning_and_timeout(
     database: Path, monkeypatch: pytest.MonkeyPatch, provider: str, reasoning_off: bool, timeout
