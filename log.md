@@ -2,6 +2,20 @@
 
 > 這份檔案在每個可驗證、可回退的儲存點更新。回退前需保留使用者原有的未提交變更。
 
+## CP-096 — 清單報告的格式名稱改掉 online
+
+- 時間：2026-10-30 +08:00
+- 狀態：已完成
+- 分支：`chore/llm-checklist-name`
+- 起點：CP-093 拿掉線上模型時，`scripts/eval_checklist.py` 寫進報告的 `schema_version` 還叫 `online-checklist-v1`，
+  版控裡的基準報告檔名也還是 `online_checklist-offline-baseline.json`，跟「全程地端」不一致。
+- 變更：
+  - `schema_version` 改成 `llm-checklist-v1`；沒有程式讀這個值，舊報告拿來當 `--baseline` 照樣能比。
+  - 基準報告改名為 `reports/llm_checklist-offline-baseline.json`，與新報告的 `llm_checklist-*` 檔名一致。
+- 沒做：預設管理員帳密（`admin`／`PowerQuery@123`）維持現狀。它只允許 loopback 登入，
+  公開服務由 `public_offline_service.ps1` 產生隨機強密碼的名冊，不會用到預設值；使用者決定不改。
+- 回退：`git revert` 本次 commit。
+
 ## CP-095 — 補上 MIT 授權
 
 - 時間：2026-10-30 +08:00

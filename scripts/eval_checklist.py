@@ -243,7 +243,7 @@ def main(argv: list[str] | None = None) -> int:
     out = args.out or REPORT_DIR / f"llm_checklist-{runtime.mode}-{stamp}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     report = {
-        "schema_version": "online-checklist-v1",
+        "schema_version": "llm-checklist-v1",
         "generated_at": datetime.now(UTC).isoformat(),
         "mode": runtime.mode,
         "provider": runtime.provider,
