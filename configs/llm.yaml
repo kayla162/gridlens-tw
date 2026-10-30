@@ -20,7 +20,7 @@ max_attempts: 3
 # 換模型用 OLLAMA_MODEL。
 #
 # 兩種模式，同一個模型，差在推理（thinking）開不開。數字來自 eval.llm_eval：規則接不住的 20 題：
-#   ollama            推理關：加上 SQL 修正後答對 14/20，每題中位數 47 秒（CP-097）。預設用這個。
+#   ollama            推理關：加上 SQL 修正後答對 13/20，每題中位數 44 秒（CP-098）。預設用這個。
 #   ollama-reasoning  推理開：修正前答對 10/20，每題中位數約 6 分鐘，7 題 900 秒內寫不完（CP-090）。
 providers:
   ollama:
