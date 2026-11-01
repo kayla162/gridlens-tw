@@ -20,6 +20,9 @@
 - 字串字面值（`LIKE '%風力%'`）改成參數：SqlGuard 要求值一律走參數，模型被退回後仍原樣再送。
 - GROUP BY 的欄位沒有出現在 SELECT：補在最前面，否則一排數字分不出是哪一組。
 
+- 答案形狀（CP-102）：問「幾…」卻列清單、問「各」卻只回總數、問「哪些」卻有重複列等，
+  見 `answer_shape`。這幾項要看問句，沒傳問句時不動。
+
 只修 LLM 寫的 SQL。修過的 SQL 一樣要通過 SqlGuard、答案檢查與語意守門，
 這裡放寬的只是格式，不是安全。
 """
@@ -33,6 +36,7 @@ from dataclasses import dataclass
 from sqlglot import exp, parse_one
 from sqlglot.errors import ParseError
 
+from text2sql.answer_shape import reshape
 from text2sql.llm import GeneratedQuery
 from text2sql.scope_guard import _MARKER, ScopeRewriteError, _name_original_placeholders
 
@@ -203,6 +207,10 @@ def repair_llm_query(
 
     if _asks_by_county(question) and _group_by_county(tree):
         notes.append('按縣市分組：GROUP BY "縣市" 改成 SUBSTR("縣市", 1, 3)')
+    tree, shape_notes = reshape(
+        tree, bindings, question=question, column_values=column_values, max_rows=max_rows
+    )
+    notes.extend(shape_notes)
     missing_keys = _select_missing_group_keys(tree)
     if missing_keys:
         notes.append(f"SELECT 補上分組欄位：{'、'.join(missing_keys)}")

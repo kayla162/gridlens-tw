@@ -14,6 +14,12 @@
 `benchmarks/llm_holdout_questions.json` 是 CP-100 另外寫的 20 題：CP-097～099 的修正都是照
 `llm_questions.json` 的錯誤設計的，換一批沒看過的題目才知道效果是不是只對那 20 題有效。
 之後也不應該照這份的錯誤去調。
+
+`benchmarks/llm_fresh_questions.json` 是 CP-102 的 27 題：答案形狀修正（`answer_shape`）
+參考了前兩份題庫的錯誤，所以在動程式**之前**先寫好這份、量好基準，
+修正前後都只拿它當成績，不照它調。
+
+    uv run --extra local python -m eval.llm_eval --questions fresh --label fresh
 """
 
 from __future__ import annotations
@@ -35,7 +41,8 @@ from serving.runtime import PROVIDER_ENV, build_runtime
 
 BENCHMARK = PROJECT_ROOT / "benchmarks" / "llm_questions.json"
 HOLDOUT = PROJECT_ROOT / "benchmarks" / "llm_holdout_questions.json"
-QUESTION_SETS = {"main": BENCHMARK, "holdout": HOLDOUT}
+FRESH = PROJECT_ROOT / "benchmarks" / "llm_fresh_questions.json"
+QUESTION_SETS = {"main": BENCHMARK, "holdout": HOLDOUT, "fresh": FRESH}
 
 
 def _number(value: object) -> float | None:
@@ -254,7 +261,10 @@ def main(argv: list[str] | None = None) -> int:
         "--questions",
         choices=sorted(QUESTION_SETS),
         default="main",
-        help="main：llm_questions.json；holdout：沒拿來調整過的另一批題目",
+        help=(
+            "main：llm_questions.json；holdout：CP-100 的另一批題目；"
+            "fresh：CP-102 動手前寫好、沒拿來調整過的題目"
+        ),
     )
     parser.add_argument("--database", type=Path, default=PROJECT_ROOT / "data/processed/power.db")
     parser.add_argument("--out", type=Path, default=PROJECT_ROOT / "reports")
