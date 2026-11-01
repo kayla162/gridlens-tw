@@ -2,6 +2,25 @@
 
 > 這份檔案在每個可驗證、可回退的儲存點更新。回退前需保留使用者原有的未提交變更。
 
+## CP-107 — 修好 CI 偶發失敗：去識別化改壞了雜湊產生的語料版本號
+
+- 時間：2026-11-02 +08:00
+- 狀態：已完成
+- 分支：`fix/corpus-rebase-flake`
+- 起點：`test_baseline_change_rebases_workspace_and_requeues_promoted_candidates` 在 CI 上偶爾失敗、重跑就過
+  （PR #20 遇過一次），本機連跑 15 次都通過。失敗訊息是找不到 `corpus-[PHONE]a7-*.json` 這個備份檔。
+- 原因：`corpus_learning._json_value` 把回傳與事件裡的**所有**字串都去識別化。晉升後的語料版本是
+  `corpus-` 加上 checksum 前 12 碼，checksum 剛好出現像電話號碼的數字串時（例如 `0912345678a7`），
+  `review()` 回傳的 `promoted_version` 會變成 `corpus-[PHONE]a7`，和實際語料檔的版本對不上；
+  測試拿它組 glob 就找不到備份。這不只是測試問題：稽核事件裡的 checksum 與備份檔名也可能被同樣改壞。
+- 變更：
+  - `_json_value` 放過三種程式自己產生的識別碼形狀：64 碼十六進位 checksum、`corpus-<12 碼>` 版本、
+    `<…>-<12 碼>.json` 備份檔名；其他字串照舊去識別化。使用者輸入在送進來時已經去識別化，這裡是輸出前的第二層。
+  - `tests/test_corpus_learning.py` 加 2 個測試：像電話的識別碼不被改、問句裡的電話仍被遮；
+    把 checksum 固定成 `0912345678a7…` 時，`review()` 回傳的版本等於實際語料檔的版本。修正前這兩個測試穩定失敗。
+- 驗證：pytest 1,376 通過；ruff check／format、`git diff --check` 通過。
+- 回退方式：`git revert` 本次 commit。
+
 ## CP-106 — 拿掉四人分工文件，開發規範移到 DEVELOPMENT.md
 
 - 時間：2026-11-01 +08:00

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import tempfile
 from collections import Counter
@@ -111,11 +112,20 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+# 程式自己產生的識別碼：checksum、晉升後的語料版本、備份檔名。它們是十六進位雜湊，不是個資，
+# 但雜湊裡偶爾會出現像電話號碼的數字串（`corpus-0912345678a7`），去識別化會把它改成
+# `corpus-[PHONE]a7`，回傳的版本就對不上真正的檔案（CP-107：CI 上偶發失敗的原因）。
+# 使用者輸入在送進來時已經去識別化過，這裡只放過這幾種形狀。
+SYSTEM_IDENTIFIER = re.compile(r"[0-9a-f]{64}|corpus-[0-9a-f]{12}|[\w.-]+-[0-9a-f]{12}\.json")
+
+
 def _json_value(value: Any) -> Any:
     """Return a JSON-safe, deidentified value without retaining result rows."""
     if value is None or isinstance(value, (bool, int, float)):
         return value
     if isinstance(value, str):
+        if SYSTEM_IDENTIFIER.fullmatch(value):
+            return value
         return deidentify(value)
     if isinstance(value, Mapping):
         return {deidentify(str(key)): _json_value(item) for key, item in value.items()}

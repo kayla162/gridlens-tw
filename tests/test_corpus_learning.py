@@ -8,7 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from serving.corpus_learning import CorpusLearningService, CorpusSelfApprovalError
+import text2sql.corpus_builder as corpus_builder
+from serving.corpus_learning import (
+    CorpusLearningService,
+    CorpusSelfApprovalError,
+    _json_value,
+)
 from text2sql.corpus import corpus_checksum, load_corpus
 from text2sql.llm import FakeLLM
 from text2sql.pipeline import PipelineResponse, Text2SQLPipeline
@@ -557,3 +562,39 @@ def test_the_single_operator_override_also_covers_corpus_promotion(tmp_path: Pat
     promoted = service.review(pending["id"], approve=True, reviewer="solo")
 
     assert promoted["status"] == "promoted"
+
+
+def test_generated_identifiers_survive_deidentification_but_personal_data_does_not() -> None:
+    # 雜湊裡出現像電話號碼的數字串時，曾被改成 `corpus-[PHONE]a7`（CP-107）。
+    phone_like = "0912345678a7"
+    payload = {
+        "promoted_version": f"corpus-{phone_like}",
+        "result_checksum": phone_like + "0" * 52,
+        "backup_path": f"corpus-v1-{phone_like}.json",
+        "question": "請打 0912345678 問 2026 年 7 月的備轉容量率",
+    }
+
+    cleaned = _json_value(payload)
+
+    assert cleaned["promoted_version"] == payload["promoted_version"]
+    assert cleaned["result_checksum"] == payload["result_checksum"]
+    assert cleaned["backup_path"] == payload["backup_path"]
+    assert "0912345678" not in cleaned["question"]
+
+
+def test_a_phone_like_promoted_version_matches_the_published_corpus(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_checksum = corpus_builder.corpus_checksum
+    monkeypatch.setattr(
+        corpus_builder,
+        "corpus_checksum",
+        lambda corpus: "0912345678a7" + real_checksum(corpus)[12:],
+    )
+    service, _pipeline_instance, _canonical = _service(tmp_path)
+    staged = _submit(service)
+
+    promoted = service.review(staged["id"], approve=True, reviewer="operator")
+
+    assert promoted["promoted_version"] == "corpus-0912345678a7"
+    assert load_corpus(service.corpus_path)["version"] == promoted["promoted_version"]
