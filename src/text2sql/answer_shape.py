@@ -26,6 +26,18 @@ CP-103 再補五種（同樣照已看過題庫的錯誤設計，成績只看 CP-
   `燃料 IN (A, B) … HAVING COUNT(DISTINCT 燃料) = 2`。
 - 名稱欄位（電廠、縣市、發電站…）的條件值在問句裡一個字也沒出現：那是模型編的，拿掉。
 
+CP-104 再補（照 fresh2 剩下的錯設計，成績只看 CP-104 新寫的 fresh3）：
+
+- 問句沒提任何時間，模型卻加了日期、年度、月份的範圍：拿掉。
+- 燃料、能源別、類別的條件值，問句一個字也沒提（而且沒說火力、再生這類總稱）：拿掉。
+- 資料品質欄位的值和問句說的相反（問「有歧義」卻填 `unmatched`）：照問句改；
+  `數值狀態`、`主檔來源` 也列入「沒問就拿掉」。
+- 自由文字欄位（歲修原因）寫成 `= '大修'`：改成 `LIKE '%大修%'`。
+- HAVING 篩出來的組卻只取一列（沒問最…、第幾）：LIMIT 放回上限。
+- 問「每個縣市有幾種燃料」卻按縣市和燃料一起分組數機組：拿掉燃料分組，改成 `COUNT(DISTINCT 燃料)`。
+- 問「每個縣市／各電廠…」而 SQL 分組了卻只取一列：每組都列出來。
+- 「每…最…」排序取一列、SELECT 還多了別的欄位：問句問的是值本身（哪一天、多少）才改成每組 MAX／MIN。
+
 判斷只看問句的字面，不看資料；改過的 SQL 一樣要過 SqlGuard、答案檢查與語意守門。
 """
 
@@ -36,10 +48,11 @@ from collections.abc import Mapping, Sequence
 
 from sqlglot import exp
 
-# 數「東西」的問法。「幾萬瓩」「幾成」「幾月」不是在數數，所以量詞要明列。
-COUNT_QUESTION = re.compile(r"(?:幾|多少)(?:部|座|個|筆|次|天|種|家|間|台|項)")
+# 數「東西」的問法。「幾萬瓩」「幾成」「幾月」不是在數數，所以量詞要明列；
+# 「哪幾座」是要清單，不是要數字（CP-104 在 fresh3 上發現 CP-102 把它改成了計數）。
+COUNT_QUESTION = re.compile(r"(?<!哪)(?:幾|多少)(?:部|座|個|筆|次|天|種|家|間|台|項)")
 # 數的是實體而不是資料列：同一座電廠在 v_unit 有好幾列，要先去重。
-ENTITY_COUNT_QUESTION = re.compile(r"(?:幾|多少)(?:座|種|家|間)")
+ENTITY_COUNT_QUESTION = re.compile(r"(?<!哪)(?:幾|多少)(?:座|種|家|間)")
 # 「平均每部機組」的「每」不是在問各組。
 EACH_GROUP = re.compile(r"各|分別|(?<!平均)每")
 LISTING_QUESTION = re.compile(r"哪些|哪幾")
@@ -72,6 +85,12 @@ EACH_NOUN_COLUMNS = {
     "能源別": "能源別",
 }
 BOTH_QUESTION = re.compile(r"同時|既.+也|都有")
+# 問的是值本身（日期、年份），不是哪一筆：「每座電廠最晚商轉是哪一天」。
+ASKS_THE_VALUE = re.compile(r"哪一?天|哪一?年|日期|何時|什麼時候|多少")
+# 「每個縣市」「各電廠」（後面不接「中／裡」）：每一組都要列出來，不是只挑一組。
+EVERY_GROUP_LISTED = re.compile(
+    r"(?<!平均)(?:每|各)一?(?:座|個|種|部)?(?:縣市|電廠|場站|發電站|燃料|能源別)(?!中|裡|之中|當中)"
+)
 # 名稱欄位：值是專有名詞，問句沒提到就是模型編的。拿掉通用字之後，任兩個連續字出現在問句就算有提。
 NAME_COLUMNS = {"電廠", "縣市", "發電站", "機組名", "機組欄位"}
 _GENERIC_NAME_PARTS = re.compile(r"發電廠|電廠|分廠|發電站|發電|風力|太陽光電|[%#＃()（）\s]")
@@ -89,7 +108,30 @@ QUALITY_FILTERS = {
     "商轉日期精度": ("精度", "精確", "只到", "月份"),
     "對齊狀態": ("對齊", "對不到", "對應", "主檔", "歧義"),
     "日期狀態": ("日期狀態", "日期有誤", "日期錯", "無效", "valid"),
+    "數值狀態": ("數值狀態", "缺漏", "缺值", "缺資料", "修補", "補值", "missing", "repaired"),
+    "主檔來源": ("主檔", "官方", "補充", "來源"),
 }
+# 問句明說了是哪一種品質狀態：照問句填，不照模型填的。依序比對，先對到的算數。
+QUALITY_VALUES = {
+    "對齊狀態": (
+        (re.compile(r"歧義|多部"), "ambiguous"),
+        (re.compile(r"對不到|沒有?對應|未對應|找不到"), "unmatched"),
+        (re.compile(r"對應到|對得到|有對應"), "matched"),
+    ),
+    "日期狀態": ((re.compile(r"有誤|錯誤|無效|不合理"), "invalid_range"),),
+    "數值狀態": (
+        (re.compile(r"缺漏|缺值|缺資料"), "missing"),
+        (re.compile(r"修補|補值|補過"), "repaired"),
+    ),
+}
+# 時間欄位：問句沒有數字、也沒有「今年」這類說法時，範圍條件都是模型自己加的。
+PERIOD_COLUMNS = {"商轉日期", "開始日期", "結束日期", "日期", "年度", "月份"}
+MENTIONS_TIME = re.compile(r"\d|今年|去年|前年|明年|本月|上個?月|今天|昨天|年代")
+# 類別欄位：值是燃料、能源別這類詞，問句至少要有一個非通用的字。總稱（火力、再生…）不猜。
+CATEGORY_COLUMNS = {"燃料", "能源別", "類別"}
+_GENERIC_CATEGORY_CHARS = set("能源力電發別類機組")
+CATEGORY_UMBRELLA = re.compile(r"火力|化石|綠能|再生|潔淨|傳統")
+FREE_TEXT_COLUMNS = {"原因"}
 OUTAGE_PERIOD_COLUMNS = {"開始日期", "結束日期"}
 
 
@@ -373,15 +415,17 @@ def extreme_per_group(tree: exp.Select, question: str, max_rows: int) -> str | N
         return None
     order = tree.args.get("order")
     columns = _selected_columns(tree)
-    if order is None or len(order.expressions) != 1 or columns is None or len(columns) != 2:
+    if order is None or len(order.expressions) != 1 or not columns:
         return None
     key = EACH_NOUN_COLUMNS[match.group(1)]
     ordered = order.expressions[0]
     names = [column.name for column in columns]
-    if key not in names or not isinstance(ordered.this, exp.Column):
+    if not isinstance(ordered.this, exp.Column) or ordered.this.name not in names:
         return None
-    value = columns[1 - names.index(key)]
-    if ordered.this.name != value.name:
+    value = columns[names.index(ordered.this.name)]
+    # 只選分組欄位和排序欄位時，其他欄位一定是多的。選了別的（機組名…）就要問句問的是那個值本身
+    # （「哪一天」），否則「各電廠最大的是哪一部機組」改成 MAX 會把機組名弄丟。
+    if set(names) - {key, value.name} and not ASKS_THE_VALUE.search(question):
         return None
     function = exp.Max if ordered.args.get("desc") else exp.Min
     item = exp.alias_(function(this=value.copy()), value.name, quoted=True)
@@ -473,6 +517,194 @@ def count_distinct_entities(tree: exp.Select, question: str) -> str | None:
     return f"問「幾{measure}」：COUNT 改成 COUNT(DISTINCT 「{column}」)"
 
 
+def _comparison_value(node: exp.Expression, bindings: dict[str, object]) -> object | None:
+    if isinstance(node, exp.Placeholder):
+        return bindings.get(node.this)
+    if isinstance(node, exp.Literal):
+        return node.this
+    return None
+
+
+def drop_unasked_periods(tree: exp.Select, question: str) -> list[str]:
+    """「起訖日期有誤的歲修有幾筆」卻加了 `開始日期 > '2025-01-01'` → 拿掉。"""
+
+    if MENTIONS_TIME.search(question):
+        return []
+    where = tree.args.get("where")
+    if where is None:
+        return []
+    dropped: list[str] = []
+    comparisons = (exp.EQ, exp.GT, exp.GTE, exp.LT, exp.LTE, exp.Between, exp.Like)
+    for node in list(where.find_all(*comparisons)):
+        column = node.this
+        if not isinstance(column, exp.Column) or column.name not in PERIOD_COLUMNS:
+            continue
+        if node.parent_select is not tree:
+            continue
+        bounds = (
+            [node.args.get("low"), node.args.get("high")]
+            if isinstance(node, exp.Between)
+            else [node.expression]
+        )
+        if not all(isinstance(bound, exp.Placeholder | exp.Literal) for bound in bounds):
+            continue
+        if _drop_condition(node):
+            dropped.append(column.name)
+    return dropped
+
+
+def _category_said(value: str, question: str) -> bool:
+    return any(char in question for char in value if char not in _GENERIC_CATEGORY_CHARS)
+
+
+def drop_unasked_categories(
+    tree: exp.Select,
+    bindings: dict[str, object],
+    column_values: Mapping[str, Sequence[str]],
+    question: str,
+) -> list[str]:
+    """問「總裝置容量超過 200 萬瓩的電廠」卻加了 `燃料 IN ('煤', …)` → 拿掉。"""
+
+    where = tree.args.get("where")
+    if where is None or CATEGORY_UMBRELLA.search(question):
+        return []
+    tables = _tables(tree)
+    dropped: list[str] = []
+    for node in list(where.find_all(exp.EQ, exp.In)):
+        column = node.this
+        if not isinstance(column, exp.Column) or column.name not in CATEGORY_COLUMNS:
+            continue
+        if node.parent_select is not tree:
+            continue
+        options = node.expressions if isinstance(node, exp.In) else [node.expression]
+        if not options or not all(isinstance(option, exp.Placeholder) for option in options):
+            continue
+        values = [bindings.get(option.this) for option in options]
+        allowed = next(
+            (column_values[key] for t in tables if (key := f"{t}.{column.name}") in column_values),
+            (),
+        )
+        if not all(isinstance(value, str) and value in allowed for value in values):
+            continue
+        if any(_category_said(str(value), question) for value in values):
+            continue
+        if _drop_condition(node):
+            dropped.append(f"{column.name}={'、'.join(map(str, values))}")
+    return dropped
+
+
+def correct_quality_values(
+    tree: exp.Select, bindings: dict[str, object], question: str
+) -> list[str]:
+    """問「有歧義的歲修」卻寫 `對齊狀態 = 'unmatched'` → 照問句改成 'ambiguous'。"""
+
+    notes: list[str] = []
+    for node in tree.find_all(exp.EQ):
+        column, placeholder = node.this, node.expression
+        if not (isinstance(column, exp.Column) and isinstance(placeholder, exp.Placeholder)):
+            continue
+        rules = QUALITY_VALUES.get(column.name)
+        value = bindings.get(placeholder.this)
+        if rules is None or not isinstance(value, str):
+            continue
+        wanted = next((target for pattern, target in rules if pattern.search(question)), None)
+        if wanted is None or wanted == value:
+            continue
+        bindings[placeholder.this] = wanted
+        notes.append(f"問句說的是「{column.name}」= {wanted!r}，不是 {value!r}")
+    return notes
+
+
+def free_text_contains(tree: exp.Select, bindings: dict[str, object]) -> list[str]:
+    """`原因 = '大修'` 只對得到原因剛好是「大修」兩個字的那筆 → `LIKE '%大修%'`。"""
+
+    notes: list[str] = []
+    for node in list(tree.find_all(exp.EQ)):
+        column, placeholder = node.this, node.expression
+        if not (isinstance(column, exp.Column) and isinstance(placeholder, exp.Placeholder)):
+            continue
+        value = bindings.get(placeholder.this)
+        if column.name not in FREE_TEXT_COLUMNS or not isinstance(value, str):
+            continue
+        if not value.strip() or "%" in value:
+            continue
+        bindings[placeholder.this] = f"%{value}%"
+        node.replace(exp.Like(this=column.copy(), expression=placeholder.copy()))
+        notes.append(f"「{column.name}」是自由文字：= {value!r} 改成 LIKE '%{value}%'")
+    return notes
+
+
+def list_every_group(tree: exp.Select, question: str, max_rows: int) -> str | None:
+    """「每個縣市單一機組最大的裝置容量」分組了卻 `ORDER BY … LIMIT 1` → 每組都列出來。
+
+    不修的話答案檢查會退回（RESULT_TRUNCATED），模型重寫時反而把參數寫壞（CP-104 逐次記錄）。
+    """
+
+    if not EVERY_GROUP_LISTED.search(question) or SPECIFIED_RANK.search(question):
+        return None
+    if tree.args.get("group") is None or tree.args.get("offset") is not None:
+        return None
+    # 只動 LIMIT 1：每組一列卻只要一列，一定是挑了一組。LIMIT 100 這類通常已經夠，不去猜組數。
+    if _limit_value(tree) != 1:
+        return None
+    tree.set("limit", exp.Limit(expression=exp.Literal.number(max_rows)))
+    return f"問「每個…」：每組都要列出，LIMIT 1 放回 {max_rows}"
+
+
+def list_every_kept_group(tree: exp.Select, question: str, max_rows: int) -> str | None:
+    """`GROUP BY 電廠 HAVING …` 篩出的組卻 `LIMIT 1`，問句沒問最…或第幾 → LIMIT 放回上限。"""
+
+    if tree.args.get("having") is None or tree.args.get("order") is not None:
+        return None
+    if SUPERLATIVE.search(question) or SPECIFIED_RANK.search(question) or NTH_RANK.search(question):
+        return None
+    limit = _limit_value(tree)
+    if limit is None or limit >= max_rows:
+        return None
+    tree.set("limit", exp.Limit(expression=exp.Literal.number(max_rows)))
+    return f"HAVING 篩出的組都要列出：LIMIT 放回 {max_rows}"
+
+
+def count_kinds_per_group(tree: exp.Select, question: str) -> str | None:
+    """「每個縣市有幾種燃料」卻 `GROUP BY 縣市, 燃料` 數機組 → `COUNT(DISTINCT 燃料)`。"""
+
+    if not EACH_GROUP.search(question) or "種" not in question:
+        return None
+    group = tree.args.get("group")
+    if group is None or len(group.expressions) < 2:
+        return None
+    kinds = [
+        column
+        for noun, column in ENTITY_NOUNS["種"].items()
+        if re.search(rf"(?:幾|多少)種\S{{0,4}}{noun}", question)
+    ]
+    if len(kinds) != 1:
+        return None
+    kind = kinds[0]
+    keys = [key for key in group.expressions if isinstance(key, exp.Column) and key.name == kind]
+    counts = [
+        item
+        for item in tree.expressions
+        if isinstance(item.this if isinstance(item, exp.Alias) else item, exp.Count)
+    ]
+    if len(keys) != 1 or len(counts) != 1:
+        return None
+    keys[0].pop()
+    for item in list(tree.expressions):
+        node = item.this if isinstance(item, exp.Alias) else item
+        if isinstance(node, exp.Column) and node.name == kind:
+            item.pop()
+    count = counts[0].this if isinstance(counts[0], exp.Alias) else counts[0]
+    count.set("this", exp.Distinct(expressions=[exp.column(kind, quoted=True)]))
+    order = tree.args.get("order")
+    for ordered in list(order.expressions) if order is not None else ():
+        if isinstance(ordered.this, exp.Column) and ordered.this.name == kind:
+            ordered.pop()
+    if order is not None and not order.expressions:
+        tree.set("order", None)
+    return f"問「幾種{kind}」：不按「{kind}」分組，改成 COUNT(DISTINCT 「{kind}」)"
+
+
 def reshape(
     tree: exp.Select,
     bindings: dict[str, object],
@@ -486,9 +718,15 @@ def reshape(
     notes: list[str] = []
     if not question:
         return tree, notes
-    dropped = drop_unasked_quality_filters(tree, question)
+    notes.extend(correct_quality_values(tree, bindings, question))
+    # 先拿掉沒問的期間：「日期狀態」要看查詢還有沒有用到起訖日。
+    # CP-104 在 fresh3 上發現順序反了，日期拿掉了、日期狀態卻留著。
+    dropped = drop_unasked_periods(tree, question)
+    dropped += drop_unasked_quality_filters(tree, question)
+    dropped += drop_unasked_categories(tree, bindings, column_values, question)
     if dropped:
         notes.append(f"拿掉問句沒提的條件：{'、'.join(dropped)}")
+    notes.extend(free_text_contains(tree, bindings))
     names = drop_unasked_names(tree, bindings, column_values, question)
     if names:
         notes.append(f"拿掉問句沒提的名稱：{'、'.join(names)}")
@@ -498,12 +736,12 @@ def reshape(
     )
     if grouped:
         notes.append(f"問「各」：按「{grouped}」分組")
-    for fix in (extreme_per_group, both_values):
+    for fix in (extreme_per_group, both_values, list_every_kept_group, list_every_group):
         note = fix(tree, question, max_rows)
         if note:
             notes.append(note)
     notes.extend(dedupe_listing(tree, question, max_rows))
-    for fix in (nth_place, keep_only_the_top, count_distinct_entities):
+    for fix in (nth_place, keep_only_the_top, count_distinct_entities, count_kinds_per_group):
         note = fix(tree, question)
         if note:
             notes.append(note)

@@ -297,3 +297,159 @@ def test_two_conditions_without_both_in_the_question_are_left_alone() -> None:
     sql = 'SELECT "電廠" FROM v_unit WHERE "燃料" = ? AND "燃料" = ? LIMIT 200'
 
     assert _repair("重油或輕柴油機組的電廠", sql, ["重油", "輕柴油"]).query.sql == sql
+
+
+def test_a_period_the_question_never_mentioned_is_dropped() -> None:
+    repair = _repair(
+        "起訖日期有誤的歲修有幾筆",
+        'SELECT COUNT(*) FROM v_outage WHERE "日期狀態" = ? AND "開始日期" > ? '
+        'AND "結束日期" < ? LIMIT 200',
+        ["invalid_range", "2025-01-01", "2026-07-31"],
+    )
+
+    assert repair.query.sql == 'SELECT COUNT(*) FROM v_outage WHERE "日期狀態" = ? LIMIT 200'
+    assert repair.query.params == ("invalid_range",)
+
+
+def test_a_period_the_question_asked_for_stays() -> None:
+    sql = 'SELECT COUNT(*) AS n FROM v_unit WHERE "商轉日期" BETWEEN ? AND ? LIMIT 1'
+
+    assert _repair("1990年代商轉的機組有幾部", sql, ["1990-01-01", "1999-12-31"]).query.sql == sql
+
+
+def test_fuels_the_question_never_mentioned_are_dropped() -> None:
+    repair = _repair(
+        "總裝置容量超過200萬瓩的電廠有幾座",
+        'SELECT COUNT(DISTINCT "電廠") AS n FROM v_unit WHERE "燃料" IN (?, ?, ?, ?) '
+        'AND "裝置容量_萬瓩" > ? LIMIT 200',
+        ["煤", "天然氣", "重油", "輕柴油", 200],
+    )
+
+    assert '"燃料"' not in repair.query.sql
+    assert repair.query.params == (200,)
+
+
+def test_fuels_the_question_named_or_summed_up_stay() -> None:
+    gas = 'SELECT COUNT(*) AS n FROM v_unit WHERE "燃料" = ? LIMIT 1'
+    thermal = 'SELECT COUNT(*) AS n FROM v_unit WHERE "燃料" IN (?, ?) LIMIT 1'
+
+    assert _repair("燃氣機組有幾部", gas, ["天然氣"]).query.params == ("天然氣",)
+    assert _repair("火力機組有幾部", thermal, ["煤", "天然氣"]).query.sql == thermal
+
+
+def test_unasked_value_status_is_dropped() -> None:
+    repair = _repair(
+        "每座風力場站最近一筆發電紀錄是哪一年",
+        'SELECT "發電站", MAX("年度") AS y FROM v_re_generation WHERE "能源別" LIKE ? '
+        'AND "數值狀態" = ? GROUP BY "發電站" LIMIT 200',
+        ["%風力", "ok"],
+    )
+
+    assert '"數值狀態"' not in repair.query.sql
+
+
+def test_the_quality_state_follows_the_question() -> None:
+    repair = _repair(
+        "對應到多部機組、有歧義的歲修有幾筆",
+        'SELECT COUNT(*) AS "筆數" FROM v_outage WHERE "對齊狀態" = ? LIMIT 1',
+        ["unmatched"],
+    )
+
+    assert repair.query.params == ("ambiguous",)
+
+
+def test_a_free_text_reason_is_matched_as_contains() -> None:
+    repair = _repair(
+        "原因寫著大修的歲修有幾筆",
+        'SELECT COUNT(*) FROM v_outage WHERE "原因" = ? LIMIT 1',
+        ["大修"],
+    )
+    blank = 'SELECT COUNT(*) FROM v_outage WHERE "原因" = ? LIMIT 1'
+
+    assert repair.query.sql == 'SELECT COUNT(*) FROM v_outage WHERE "原因" LIKE ? LIMIT 1'
+    assert repair.query.params == ("%大修%",)
+    assert _repair("原因空白的歲修有幾筆", blank, [""]).query.sql == blank
+
+
+def test_every_group_kept_by_having_is_listed() -> None:
+    repair = _repair(
+        "同時有煤和天然氣機組的電廠",
+        'SELECT "電廠" FROM v_unit WHERE "燃料" IN (?, ?) GROUP BY "電廠" '
+        'HAVING COUNT(DISTINCT "燃料") = 2 LIMIT 1',
+        ["煤", "天然氣"],
+    )
+
+    assert repair.query.sql.endswith("LIMIT 200")
+
+
+def test_kinds_per_group_count_distinct_instead_of_grouping_by_the_kind() -> None:
+    repair = _repair(
+        "每個縣市有幾種燃料的機組",
+        'SELECT SUBSTRING("縣市", 1, 3) AS "縣市", "燃料", COUNT(*) AS "機組數" FROM v_unit '
+        'GROUP BY SUBSTRING("縣市", 1, 3), "燃料" ORDER BY SUBSTRING("縣市", 1, 3) LIMIT 100',
+        [],
+    )
+
+    assert 'COUNT(DISTINCT "燃料")' in repair.query.sql
+    assert 'GROUP BY SUBSTRING("縣市", 1, 3) ORDER' in repair.query.sql
+    assert ', "燃料",' not in repair.query.sql
+
+
+def test_params_sent_with_no_placeholder_at_all_are_dropped() -> None:
+    repair = _repair(
+        "每個縣市單一機組最大的裝置容量",
+        'SELECT SUBSTR("縣市", 1, 3) AS "縣市", MAX("裝置容量_萬瓩") AS m FROM v_unit '
+        'GROUP BY SUBSTR("縣市", 1, 3) LIMIT 200',
+        ["JSON scalar"],
+    )
+
+    assert repair.query.params == ()
+
+
+def test_every_group_is_listed_when_the_question_asks_for_each() -> None:
+    repair = _repair(
+        "每個縣市單一機組最大的裝置容量",
+        'SELECT SUBSTR("縣市", 1, 3) AS "縣市", MAX("裝置容量_萬瓩") AS m FROM v_unit '
+        'GROUP BY SUBSTR("縣市", 1, 3) ORDER BY m DESC LIMIT 1',
+        [],
+    )
+    top = 'SELECT "電廠" FROM v_unit GROUP BY "電廠" ORDER BY COUNT(*) DESC LIMIT 1'
+
+    assert repair.query.sql.endswith("LIMIT 200")
+    assert _repair("各電廠中機組數最多的是哪一座", top, []).query.sql == top
+
+
+def test_the_latest_per_plant_ignores_extra_columns_when_asking_for_the_date() -> None:
+    repair = _repair(
+        "各電廠最晚商轉的機組是哪一天商轉的",
+        'SELECT "機組名", "商轉日期" FROM v_unit WHERE "商轉日期" IS NOT NULL '
+        'ORDER BY "商轉日期" DESC LIMIT 1',
+        ["2025-01-01"],
+    )
+    which_unit = (
+        'SELECT "機組名", "電廠", "裝置容量_瓩" FROM v_unit ORDER BY "裝置容量_瓩" DESC LIMIT 1'
+    )
+
+    assert repair.query.sql == (
+        'SELECT "電廠", MAX("商轉日期") AS "商轉日期" FROM v_unit '
+        'WHERE NOT "商轉日期" IS NULL GROUP BY "電廠" LIMIT 200'
+    )
+    assert _repair("各電廠容量最大的是哪一部機組", which_unit, []).query.sql == which_unit
+
+
+def test_which_few_is_a_listing_not_a_count() -> None:
+    sql = 'SELECT DISTINCT "電廠" FROM v_unit WHERE "燃料" = ? LIMIT 200'
+
+    assert _repair("哪幾座電廠有重油機組", sql, ["重油"]).query.sql == sql
+
+
+def test_the_valid_date_filter_goes_with_an_unasked_period() -> None:
+    repair = _repair(
+        "沒寫原因的歲修有幾筆",
+        'SELECT COUNT(*) FROM v_outage WHERE "原因" IS NULL AND "日期狀態" = ? '
+        'AND "開始日期" >= ? AND "結束日期" <= ? LIMIT 1',
+        ["valid", "2025-01-01", "2026-07-31"],
+    )
+
+    assert repair.query.sql == 'SELECT COUNT(*) FROM v_outage WHERE "原因" IS NULL LIMIT 1'
+    assert repair.query.params == ()
