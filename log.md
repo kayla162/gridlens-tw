@@ -46,7 +46,7 @@
   「同時有 A 和 B」寫成同一欄等於兩個值、1 題沒有回答。第一類也許能改，但它是在 27 題上看到的，
   要改之前先另寫一份新題庫。
 - 驗證：pytest 1,347 通過；ruff 通過。
-- 回退：`git revert` 本次 commit；報告檔 `reports/llm_eval_ollama_{fresh_before_shape,fresh_shape,fresh_shape_run2,holdout_shape,shape}.*` 可一併刪除。
+- 回退方式：`git revert` 本次 commit；報告檔 `reports/llm_eval_ollama_{fresh_before_shape,fresh_shape,fresh_shape_run2,holdout_shape,shape}.*` 可一併刪除。
 
 ## CP-101 — README 改寫成作品集用
 
