@@ -2,6 +2,23 @@
 
 > 這份檔案在每個可驗證、可回退的儲存點更新。回退前需保留使用者原有的未提交變更。
 
+## CP-108 — 所有修正合併後重量推理開的模式
+
+- 時間：2026-11-02 +08:00
+- 狀態：已完成
+- 分支：`docs/reasoning-remeasure`
+- 起點：推理開（`ollama-reasoning`）只在 CP-090 量過，當時還沒有 SQL 修正與答案形狀修正（main 20 題答對 10、
+  7 題 900 秒寫不完）；文件與 `configs/llm.yaml` 一直寫「修正後未重量」。
+- 變更：不改程式，只重量並更新文件。
+  - `--provider ollama-reasoning --timeout 900` 重量 fresh3（28 題）與 main（20 題）：25／0／3 與 14／1／5
+    （答對／答錯／沒有回答），每題中位數 75 與 109 秒。
+  - 與推理關現況並排（fresh3 21／6／1、main 18／2／0）：合計答對同為 39，推理關答錯 8、推理開答錯 1；
+    推理開失敗的 8 題都是沒有回答（6 題逾時、2 題缺參數）。兩份題庫都照推理關的錯修過，比較偏向推理關。
+  - 更新 `docs/LLM_EVALUATION.md`（新增「推理開重量」）、`configs/llm.yaml` 註解、README「學到的事」第 1 條。
+  - 新增報告 `reports/llm_eval_ollama-reasoning_fresh3_reasoning.*`、`reports/llm_eval_ollama-reasoning_reasoning_repaired.*`。
+- 驗證：兩次評測都正常結束（exit 0）；只改文件、設定註解與報告；pytest 1,376 通過，ruff check／format、`git diff --check` 通過。
+- 回退方式：`git revert` 本次 commit。
+
 ## CP-107 — 修好 CI 偶發失敗：去識別化改壞了雜湊產生的語料版本號
 
 - 時間：2026-11-02 +08:00
