@@ -3,14 +3,17 @@
 > 用中文問台灣電力資料，系統產生 SQL、查詢並畫圖回答，同時告訴你「這份資料能不能支持這個答案」。
 > **全程地端**：規則、檢索、語言模型都在自己的電腦上跑，不需要 API key，問句與資料不送到任何雲端服務。
 
-> **English summary** — A local-first Text2SQL system for Taiwan Power Company open data. Questions in Chinese are answered
-> by deterministic rules first; the long tail goes to a local LLM (Ollama, `qwen3:8b`). Every query passes an AST-based SQL
-> guard and a semantic guard. I added a local LLM evaluation with held-out sets, and SQL repairs that raised accuracy on
-> a set written before the last round of changes from 15/28 to 20/28 (earlier rounds: 10/26 to 15/26, 14/27 to 21/27). I also built a 10-minute realtime generation collector, dashboard and query path.
+> **English summary** — A local-first Text2SQL system for Taiwan Power Company open data, developed in depth on top of
+> an earlier project ([lee851104/text2sql_project](https://github.com/lee851104/text2sql_project)). Questions in Chinese
+> are answered by deterministic rules first; the long tail goes to a local LLM (Ollama, `qwen3:8b`). Every query passes an
+> AST-based SQL guard and a semantic guard. I built a local LLM evaluation in which every round of fixes is scored on a
+> question set written before the changes, plus SQL and answer-shape repairs: the latest round went from 15/28 to 20/28
+> (earlier rounds: 14/27 to 21/27, 10/26 to 15/26). I also built a 10-minute realtime generation collector, dashboard and
+> query path.
 
 ![Python](https://img.shields.io/badge/Python-3.12-3776ab)
 ![Local LLM](https://img.shields.io/badge/LLM-Ollama%20qwen3%3A8b%20(local)-1a5fb4)
-![Tests](https://img.shields.io/badge/tests-1%2C329%20passing-2e7d32)
+![Tests](https://img.shields.io/badge/tests-1%2C374%20passing-2e7d32)
 ![License](https://img.shields.io/badge/license-MIT-14498c)
 
 ![GridLens TW 查詢中心：問「2026年7月20日出力前五名機組」，回 5 筆結果、類別比較長條圖與明細表](readme_pic.png)
@@ -21,32 +24,33 @@
 |---|---|
 | 規則路徑（多數問題） | 意圖 80／80、執行 60／60、語意陷阱端到端 45／45，全部可重現、不需要模型 |
 | 安全 | SQL 攻擊題 16／16 攔截、正常問題 0／20 誤攔；SQL 以語法樹檢查，權限在後端改寫 |
-| 本機 LLM（規則答不出的長尾） | 在**沒調過的題庫**上答對 3 → **9／20**，沒有回答 4 → 0；兩次重跑結果相同 |
+| 本機 LLM（規則答不出的長尾） | 每輪先寫新題庫再修：最新一輪 15 → **20／28**，兩次重跑相同；最早一份沒調過的題庫從 3／20 起步 |
 | 即時資料 | 每 10 分鐘收集台電 204 個機組的發電量，先封存再入庫，壞了能從封存重建 |
-| 工程品質 | 1,329 項測試、CI 全程離線；每個改動都有可回退的紀錄（[log.md](log.md)） |
+| 工程品質 | 1,374 項測試、CI 全程離線；每個改動都有可回退的紀錄（[log.md](log.md)） |
 
 **技術**：Python、FastAPI、SQLite、sqlglot、Ollama（本機 LLM）、RAG（自寫字元 n-gram 檢索）、LLM guardrails、
 評測設計（對照實驗、held-out 題庫）、pytest、GitHub Actions。
 
-## 我負責的部分
+## 基於原專題的深度開發
 
-這是團隊專題 [lee851104/text2sql_project](https://github.com/lee851104/text2sql_project) 的 fork。
-資料對齊、Text2SQL 管線、雙層守門、帳號權限與資料治理的基礎由團隊完成；下面是我主導的部分，commit 紀錄都查得到。
+本專案基於原專題 [lee851104/text2sql_project](https://github.com/lee851104/text2sql_project) 進行深度開發。
+原專題提供了資料對齊、Text2SQL 管線、雙層守門、帳號權限與資料治理的基礎；下面是在它之上新增或重寫的部分，
+commit 紀錄都查得到。
 
 **1. 本機 LLM：改成全程地端，並量出、改善它的準確率**
 - 拿掉雲端模型，只保留本機 Ollama；三種執行模式（只用規則／一律用本機模型／偵測到才用），公開服務固定只用規則。
-- 建立 LLM 評測：只收「規則答不出、資料答得出」的題目，執行模型的 SQL 與標準答案比對結果；
-  另寫一份**從沒拿來調整過的 held-out 題庫**，避免只是對考題修。
+- 建立 LLM 評測：只收「規則答不出、資料答得出」的題目，執行模型的 SQL 與標準答案比對結果。
+  每一輪修正**動手前先另寫一份新題庫、量好基準**，只拿它當成績；照錯誤修過的題庫一律標成偏樂觀。
 - 用對照實驗找出瓶頸：推理開較準但慢 30 倍；RAG 開或關總分相同，不是準確率低的原因；
   逐次記錄模型的輸出後發現，它被退回時常把同一句 SQL 原樣再送。
 - 依此設計 **SQL 自動修正**（[sql_repair.py](src/text2sql/sql_repair.py)）：只修正確寫法唯一的錯，例如 `LIMIT ?`、
   `縣市 = '高雄市'`（資料存的是「高雄市小港區」）、寫死在 SQL 裡的字串；有兩種以上改法時不猜。
   修過的 SQL 一樣要過所有守門。
-- 再補**答案形狀修正**（[answer_shape.py](src/text2sql/answer_shape.py)）：問「有幾座」卻列清單、問「各」卻只回總數、
-  問「哪些」卻有重複列、問「最大的」卻回一串、自己多加問句沒提的條件。動手前先另寫 27 題、量好基準，
-  只拿它當成績：14 → 21。再照剩下的錯修一輪（數電廠時去重、第 N 名、每組最大、同時有 A 和 B、模型自己編的條件），
-  同樣先另寫 26 題當成績：10 → 15。第三輪拿掉模型自己加的條件（沒問的日期範圍、燃料、資料品質狀態），
-  並修好 2 題因為多送參數而沒有回答的題目，新寫的 28 題：15 → 20。
+- 再補**答案形狀修正**（[answer_shape.py](src/text2sql/answer_shape.py)），三輪各用一份新題庫計分：
+  - 第一輪：問「有幾座」卻列清單、問「各」卻只回總數、問「哪些」卻有重複列、問「最大的」卻回一串 —— 27 題 14 → 21。
+  - 第二輪：數電廠時去重、第 N 名補 OFFSET、每組取最大、「同時有 A 和 B」、模型編出來的電廠與縣市 —— 26 題 10 → 15。
+  - 第三輪：拿掉模型自己加的條件（沒問的日期範圍、燃料、資料品質狀態），並修好 2 題因為多送參數而一直被擋、
+    沒有回答的題目 —— 28 題 15 → 20，每題中位數 5.8 → 4.2 秒。
 - 試過但拿掉的：把「結果有重複列」等問題退回給模型，分數反而從 13 掉到 11。
 
 **2. 即時發電：從收集、展示到用中文查**
@@ -70,7 +74,7 @@
 flowchart LR
     Q[中文問題] --> R{離線規則<br/>接得住嗎}
     R -- 是 --> G1
-    R -- 否 --> L[本機 LLM<br/>＋檢索範例] --> F[SQL 自動修正] --> G1
+    R -- 否 --> L[本機 LLM<br/>＋檢索範例] --> F[SQL 自動修正<br/>＋答案形狀修正] --> G1
     G1{安全守門<br/>語法樹檢查} -- 不安全 --> X[拒絕並說明]
     G1 -- 通過 --> G2{語意守門<br/>答得出來嗎}
     G2 -- 答不出 --> X
@@ -85,7 +89,7 @@ flowchart LR
 
 ## 本機 LLM 評測
 
-規則答不出的題目交給本機 `qwen3:8b`（推理關）。用三份題庫量，比對的是查詢結果的值，不看欄名與順序：
+規則答不出的題目交給本機 `qwen3:8b`（推理關）。用五份題庫量，比對的是查詢結果的值，不看欄名與順序。
 
 每一輪都先另寫新題庫當成績，再照上一份的錯修程式；粗體是當輪的成績，其餘照它們修過，偏樂觀。
 
@@ -97,17 +101,17 @@ flowchart LR
 | 第二輪找錯誤用的 20 題（[held-out](benchmarks/llm_holdout_questions.json)） | 3 | 9 | 16 | 16 | 17 |
 | 第一輪找錯誤用的 20 題（[llm_questions](benchmarks/llm_questions.json)） | 5 | 15 | 17 | 18 | 18 |
 
-學到的三件事：
+學到的五件事：
 
 1. **推理開比較準，但慢 30 倍**（同一份題庫 10 題 vs 6 題，每題數分鐘 vs 十幾秒），所以預設關、需要時可切換。
 2. **RAG 不是準確率低的原因**：關掉檢索範例總分不變，但有 7 題結果互換；字面相似的範例會把模型帶偏。
 3. **能用程式改好的錯就直接改**：8B 模型被退回時常原樣再送，退回請它改幾乎沒用；修正程式只處理寫法唯一的錯。
-
 4. **很多「理解題意」的錯其實是答案形狀錯**：問「有幾座」卻列清單、問「各」卻只回總數，問句說得夠清楚時程式改得好。
+5. **照錯誤修過的題庫不能當成績**：同一套程式，修過的題庫 26/27，新寫的只有 15/26。所以每一輪都先寫新題庫，
+   在新題庫上發現的程式 bug 也是量完成績之後才修、不算分。
 
-結論是**本機 8B 模型在規則答不出、沒調過的題目上大約答對七成（20/28）**；三輪的成績分別是 21/27、15/26、20/28，
-每份題庫難度差很多，照錯誤修過的分數（26/27、22/26）不能當成績。剩下的錯多半真的要理解題意
-（查錯檢視、單日寫成整月、指定月份卻用整個資料期間）。
+結論是**本機 8B 模型在規則答不出、沒調過的題目上大約答對六到七成**：三輪的成績分別是 21/27、15/26、20/28，
+每份題庫難度差很多。剩下的錯多半真的要理解題意（查錯檢視、單日寫成整月、指定月份卻用整個資料期間）。
 完整實驗與每一步的數字見 [docs/LLM_EVALUATION.md](docs/LLM_EVALUATION.md)。
 
 ```bash
