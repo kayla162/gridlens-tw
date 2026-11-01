@@ -467,7 +467,7 @@ def check_log_checkpoint(files: list[str], merge_base: str, branch: str) -> Find
             "log.md 儲存點紀錄",
             "WARN",
             "這個分支沒有更新 log.md。",
-            fix="依 docs/TEAM_4_ROLES.md，commit 前必須在 log.md 新增本次 checkpoint，"
+            fix="依 docs/DEVELOPMENT.md，commit 前必須在 log.md 新增本次 checkpoint，"
             "記錄狀態、驗收證據與精確回退方式。",
         )
     added = [text for _, _, text in added_lines(merge_base, branch, ["log.md"])]

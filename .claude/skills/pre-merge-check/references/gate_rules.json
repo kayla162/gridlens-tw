@@ -159,7 +159,7 @@
         "docs/SERVING.md",
         "README.md"
       ],
-      "reason": "HTTP 行為或 runtime 有變更時，API 契約／啟動文件必須同步（TEAM_4_ROLES 合併檢查表）"
+      "reason": "HTTP 行為或 runtime 有變更時，API 契約／啟動文件必須同步（DEVELOPMENT 合併檢查表）"
     },
     {
       "when": [
@@ -170,7 +170,7 @@
         "docs/",
         ".env.example"
       ],
-      "reason": "設定項變更需要同步說明文件，避免其他 Owner 不知道新旗標"
+      "reason": "設定項變更需要同步說明文件，避免使用者不知道新旗標"
     }
   ]
 }

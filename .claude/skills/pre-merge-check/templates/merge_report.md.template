@@ -11,7 +11,7 @@
 | 異動檔案 | {{FILE_COUNT}} 個 |
 | 檢查時間 | {{GENERATED_AT}} |
 
-判定依據：`.github/workflows/ci.yml`、`docs/TEAM_4_ROLES.md` 的儲存點合併檢查表、
+判定依據：`.github/workflows/ci.yml`、`docs/DEVELOPMENT.md` 的儲存點與合併檢查表、
 `.claude/skills/pre-merge-check/references/merge_rules.md`。
 
 ## 判定摘要

@@ -5,15 +5,15 @@
 
 1. `.github/workflows/ci.yml` —— offline-ci 的實際門檻（ruff format / ruff check / pytest）
 2. `.gitignore` 與專案規格 §9 —— 哪些產物不得進版控
-3. `docs/TEAM_4_ROLES.md` 文末「儲存點與合併檢查表」中**機器可判定**的那幾條
+3. `docs/DEVELOPMENT.md` 的開發規範與文末「儲存點與合併檢查表」中**機器可判定**的那幾條
 
-## 範圍：只檢查對齊，不檢查分工
+## 範圍：只檢查對齊，不檢查內容判斷
 
 本門檻只回答「**這個分支的格式與規範對齊了嗎**」：CI 會不會掛、有沒有把不該進版控的東西帶進來、
 commit 訊息格式、`log.md` 有沒有記錄、跟 `main` 同不同步。
 
-**誰擁有哪個檔案、誰該審查什麼、要不要交接單，不在本門檻範圍內。** 那是人的判斷，
-規則寫死在工具裡只會在分工調整時變成過期的噪音。需要時請直接看 `docs/TEAM_4_ROLES.md`。
+**改動合不合理、該不該這樣設計，不在本門檻範圍內。** 那是人的判斷，
+寫死在工具裡只會變成過期的噪音。開發規範見 `docs/DEVELOPMENT.md`。
 
 ## 三級判定
 
@@ -34,13 +34,13 @@ commit 訊息格式、`log.md` 有沒有記錄、跟 `main` 同不同步。
 | 工作目錄狀態 | WARN | 工作目錄有未提交變更時，ruff／pytest 驗的是工作目錄而不是那個 commit。**這時不得判 PASS** —— 假的綠燈比沒有門檻更糟 |
 | 與 main 的合併衝突 | BLOCK | 有衝突就不可能自動合併，必須先在分支上解掉 |
 | 與 main 的同步狀態 | WARN | 落後 main 時，分支上的驗收證據不等於合併後的結果，需人工判斷要不要重跑。實測靠這條發現過整個分支是重工 |
-| 機密字串外洩 | BLOCK | 共用 Prompt 第 5 條：不得把 API key、密碼、session、真實識別資料加入 Git |
+| 機密字串外洩 | BLOCK | DEVELOPMENT 第 4 條：不得把 API key、密碼、session、真實識別資料加入 Git |
 | 禁止進版控的檔案 | BLOCK | `.gitignore` 明列 + 規格 §9：raw／interim／processed 都不進版控；`架構參考/` 含未去識別化真實電號 |
 | 大型檔案 | BLOCK | 原始快照與 release 壓縮包由 GitHub Releases 保存，不重複提交 |
 | 空白字元檢查 | BLOCK | 合併檢查表明列 `git diff --check HEAD` |
 | Commit message 格式 | WARN | main 上全部是 Conventional Commits（`feat:`／`fix:`／`docs:`／`chore:`），但這是慣例不是 CI 門檻 |
-| log.md 儲存點紀錄 | WARN | 共用 Prompt 第 9 條：每到要 commit 的可驗證儲存點，必須先更新 log.md 記錄狀態、證據與精確回退方式 |
-| 測試同步 | WARN | 共用 Prompt 第 7 條：高風險改動必須加負向、競態或故障注入測試。純重構可能合理，故不阻擋 |
+| log.md 儲存點紀錄 | WARN | DEVELOPMENT 第 9 條：每到要 commit 的可驗證儲存點，必須先更新 log.md 記錄狀態、證據與精確回退方式 |
+| 測試同步 | WARN | DEVELOPMENT 第 6 條：高風險改動必須加負向、競態或故障注入測試。純重構可能合理，故不阻擋 |
 | 文件同步 | WARN | 合併檢查表：README／SERVING／API 契約已在行為變更時同步 |
 | `ruff format --check` | BLOCK | ci.yml 的 Format check step |
 | `ruff check` | BLOCK | ci.yml 的 Lint step |
