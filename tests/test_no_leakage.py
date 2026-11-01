@@ -65,4 +65,6 @@ def test_benchmark_directory_contains_only_expected_versioned_json() -> None:
         "llm_questions.json",
         # 沒拿來調整過的 LLM 題（CP-100）：--questions holdout。
         "llm_holdout_questions.json",
+        # 動手前寫好的 LLM 題（CP-102）：--questions fresh。
+        "llm_fresh_questions.json",
     }
