@@ -7,6 +7,7 @@
 
 - `LIMIT ?` 配一個整數參數：SQLite 認，但 SqlGuard 只收整數常數。把參數填回 LIMIT。
 - 多送的空字串參數：SQL 沒有對應的 `?`，模型卻送了 `[""]`。全是空白的多餘參數直接拿掉。
+  SQL 裡一個 `?` 都沒有時（CP-104），送來的參數不管是什麼都是多的，全部拿掉。
 - 缺 LIMIT：補上 `LIMIT max_rows`。只會讓結果變少，不會讓查詢範圍變大。
 - 封閉集合欄位的 `=` 用了說法而不是值，而且只有一種對法：
   - 資料裡恰好一個值包含在說法裡：`燃料 = '燃煤'` → `'煤'`；
@@ -55,6 +56,10 @@ def _drop_blank_extras(sql: str, params: Sequence[object]) -> tuple[tuple[object
     expected = sql.count("?")
     if len(params) <= expected:
         return tuple(params), None
+    if expected == 0:
+        # 一個 ? 都沒有：參數全是多的（實測有 ['2025-01-01']、['?']、['JSON scalar']），
+        # 不必猜哪個對應哪個。
+        return (), f"SQL 沒有 ?：拿掉 {len(params)} 個多送的參數"
     kept = tuple(value for value in params if not (isinstance(value, str) and not value.strip()))
     if len(kept) != expected:
         return tuple(params), None
