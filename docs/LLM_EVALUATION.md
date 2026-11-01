@@ -1,6 +1,6 @@
 # 本機 LLM 評測：完整過程
 
-> README 只放結論，這裡是每一步的實驗與數字。各步驟的細節與回退方式記在 [log.md](../log.md) 的 CP-088～CP-102。
+> README 只放結論，這裡是每一步的實驗與數字。各步驟的細節與回退方式記在 [log.md](../log.md) 的 CP-088～CP-103。
 
 **讀這份文件前要知道的**：下面依時間順序寫。最前面的「三組對照實驗」是在 SQL 自動修正之前做的，
 當時「把錯誤退回給模型重寫」對推理開的模式有效；後來逐次記錄才發現，推理關的模式收到錯誤多半原樣再送，
@@ -8,11 +8,12 @@
 
 **目前的結論**（推理關、`qwen3:8b`、規則接不住的題目）：
 
-| 題庫 | 修正前 | 加答案形狀修正前 | 現在 |
-|---|---:|---:|---:|
-| 動手前寫好的 27 題（[llm_fresh_questions.json](../benchmarks/llm_fresh_questions.json)） | — | 14 | **21**（兩次重跑相同） |
-| 第二輪找錯誤用的 20 題（[llm_holdout_questions.json](../benchmarks/llm_holdout_questions.json)） | 3 | 9 | 16（照這份修過，偏樂觀） |
-| 第一輪找錯誤用的 20 題（[llm_questions.json](../benchmarks/llm_questions.json)） | 5 | 15 | 17（照這份修過，偏樂觀） |
+| 題庫 | 修正前 | 加答案形狀修正前 | CP-102 | 現在（CP-103） |
+|---|---:|---:|---:|---:|
+| **動手前寫好的 26 題**（[llm_fresh2_questions.json](../benchmarks/llm_fresh2_questions.json)） | — | — | 10 | **15**（兩次重跑相同） |
+| 上一輪的成績題庫 27 題（[llm_fresh_questions.json](../benchmarks/llm_fresh_questions.json)） | — | 14 | 21 | 26（照這份修過，偏樂觀） |
+| 第二輪找錯誤用的 20 題（[llm_holdout_questions.json](../benchmarks/llm_holdout_questions.json)） | 3 | 9 | 16 | 16（照這份修過，偏樂觀） |
+| 第一輪找錯誤用的 20 題（[llm_questions.json](../benchmarks/llm_questions.json)） | 5 | 15 | 17 | 18（照這份修過，偏樂觀） |
 
 規則接得住的題目不打 LLM；接不住的才交給本機的 Ollama（`qwen3:8b`，資料不外送）。
 它到底答得多好，原本沒有人量過，所以做了一份專門的評測：
@@ -109,8 +110,31 @@
 `uv run --extra local python -m eval.llm_eval --questions fresh`；報告：[現在](../reports/llm_eval_ollama_fresh_shape.md)、
 [重跑](../reports/llm_eval_ollama_fresh_shape_run2.md)、[修正前](../reports/llm_eval_ollama_fresh_before_shape.md)，過程見 CP-102。
 
+**照 27 題的錯再修一輪**（CP-103）。上面剩下的四類加上 holdout／main 退步的兩題（模型自己編了一座電廠、一個縣市）
+都能用程式改：`COUNT(*)` 改成 `COUNT(DISTINCT 電廠)`、第 N 名補 `OFFSET`、「每座電廠…」按電廠分組（「每…最…」改成每組 MAX／MIN）、
+同一欄 `= A AND = B` 改成 `IN (A, B) … HAVING COUNT(DISTINCT) = 2`、問句沒提的電廠／縣市條件拿掉
+（只拿掉資料裡真的有的值；資料裡沒有的交給答案檢查退回，否則會默默查成全部）。
+這些是在 27 題上看到的，所以動程式之前再寫一份 26 題（[llm_fresh2_questions.json](../benchmarks/llm_fresh2_questions.json)，
+42 題候選、16 題規則接得住），用 CP-102 的程式量基準：
+
+| 動手前寫好的 26 題 | CP-102 | 現在（兩次重跑） |
+|---|---:|---:|
+| 答對 | 10 | **15／15** |
+| 答錯但看起來正常 | 14 | 9／9 |
+| 沒有回答 | 2 | 2／2 |
+| 每題秒數（中位數） | 5.5 | 5.4／5.6 |
+
+5 題變對、沒有一題變錯。照它們修過的題庫：27 題 21 → 26、holdout 16 → 16、main 17 → 18（「每座電廠的機組數」變對）。
+
+26 題剩下的 11 題比上一輪雜：「同時有煤和天然氣」HAVING 寫對卻 `LIMIT 1`、2 題沒有回答、
+3 題整句寫偏（只有一部機組的電廠、每種能源別幾座場站、每座風力場站最近一年）、「幾種燃料」數成機組、
+「總裝置容量超過 200 萬瓩」比成單機、多加日期範圍、`ambiguous` 填成 `unmatched`、「原因寫著大修」用 `=` 而不是 LIKE。
+其中 `LIMIT 1` 那題看起來也能改，但同樣要先另寫題庫；其餘多半真的要理解題意。
+`uv run --extra local python -m eval.llm_eval --questions fresh2`；報告：[現在](../reports/llm_eval_ollama_fresh2_gaps.md)、
+[重跑](../reports/llm_eval_ollama_fresh2_gaps_run2.md)、[修正前](../reports/llm_eval_ollama_fresh2_before.md)，過程見 CP-103。
+
 題庫有兩題「各縣市…」的標準答案原本按含鄉鎮的縣市欄位分組，與專案自己的規則相反，模型照錯法寫反而算對；CP-098 改成按縣市分組，第一輪的 13 是改正後的成績（用舊標準算是 14）。報告：[第二輪](../reports/llm_eval_ollama_repair_v2.md)、[第二輪重跑](../reports/llm_eval_ollama_repair_v2_run2.md)，過程見 CP-097～099。
 
-所以設計成**規則為主、本機 LLM 補位**，提供兩種模式：`POWERQUERY_LLM_PROVIDER=ollama`（推理關，預設；沒調過的 27 題答對 21）與
+所以設計成**規則為主、本機 LLM 補位**，提供兩種模式：`POWERQUERY_LLM_PROVIDER=ollama`（推理關，預設；動手前寫好的 26 題答對 15）與
 `ollama-reasoning`（推理開，每題數分鐘；修正前答對 10/20，修正後未重量）。LLM 寫的 SQL 一樣要過語法樹守門、語意守門與權限改寫，不是信任邊界。
-限制：每份只有 20～27 題、8B 模型在筆電上跑，數字是量級而不是精確的準確率。過程記在 [log.md](../log.md) CP-088～102。
+限制：每份只有 20～27 題、8B 模型在筆電上跑，數字是量級而不是精確的準確率。過程記在 [log.md](../log.md) CP-088～103。
