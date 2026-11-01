@@ -88,11 +88,11 @@ data/realtime/archive/     data/processed/realtime.db ◀──────┘
 
 ### 3.2 三個子專案
 
-| | 內容 | 主責（依 `docs/TEAM_4_ROLES.md`） | 依賴 |
-|---|---|---|---|
-| **RT-1** | 收集器、封存、`realtime.db`、解析與驗證、彙總保留重建、`status` | A；啟動批次檔與 `config.yaml` 路徑由 D | 無 |
-| **RT-2** | `d006010` 月匯入、兩份資料的機組對照、回補、對帳 | A | RT-1 |
-| **RT-3** | 第二個唯讀執行器、三道守門、離線路由與語料、runtime 與健康 API、`coverage.yaml` 與對外文件、評測固定資料 | B、C、D | RT-1 |
+| | 內容 | 依賴 |
+|---|---|---|
+| **RT-1** | 收集器、封存、`realtime.db`、解析與驗證、彙總保留重建、`status` | 無 |
+| **RT-2** | `d006010` 月匯入、兩份資料的機組對照、回補、對帳 | RT-1 |
+| **RT-3** | 第二個唯讀執行器、三道守門、離線路由與語料、runtime 與健康 API、`coverage.yaml` 與對外文件、評測固定資料 | RT-1 |
 
 RT-2 和 RT-3 彼此不依賴，可以並行。
 
@@ -743,36 +743,36 @@ CI 跑在 Ubuntu、不連網，以下全部要在 CI 上通過（Windows 專屬�
 - **Windows 專屬**：CI 只測得到 `fcntl` 那條鎖；`msvcrt` 那條與批次檔在本機 Windows 上測，
   比照現有的 `test_windows_launcher.py`，非 Windows 時跳過。
 
-## 11. 檔案、分工與流程
+## 11. 檔案與流程
 
 ### 11.1 RT-1 會新增或修改的檔案
 
-| 檔案 | 內容 | Owner |
-|---|---|---|
-| `src/ingest/realtime/config.py` | 讀 `configs/realtime.yaml` 與路徑 | A |
-| `src/ingest/realtime/timeutil.py` | 固定 UTC+8、時段取整與格式（parse、schedule、maintenance、status 共用） | A |
-| `src/ingest/realtime/candidates.py` | 人工決定檔的候選產生器（§5.3），執行期不用 | A |
-| `src/ingest/realtime/client.py` | 條件式請求，傳輸層可注入 | A |
-| `src/ingest/realtime/schedule.py` | 純函式：下一步做什麼、什麼時候做 | A |
-| `src/ingest/realtime/parse.py` | 純函式：原始位元組 → 解析結果或拒收代碼 | A |
-| `src/ingest/realtime/archive.py` | 封存與抓取紀錄的寫入、讀取、重放 | A |
-| `src/ingest/realtime/decisions.py` | 載入並驗證 `realtime_units.csv` 與 `plants.csv` | A |
-| `src/ingest/realtime/store.py` | schema、入庫、維度同步、抓取紀錄鏡像 | A |
-| `src/ingest/realtime/maintenance.py` | 日彙總、清除、缺口分類 | A |
-| `src/ingest/realtime/rebuild.py` | 從封存重建 | A |
-| `src/ingest/realtime/lock.py` | 單一實例鎖 | A |
-| `src/ingest/realtime/status.py` | `read_status()` | A |
-| `src/ingest/realtime/collector.py` | 主迴圈，串起以上模組 | A |
-| `src/ingest/realtime/__main__.py` | 指令列 | A |
-| `configs/realtime.yaml` | 行為參數 | A |
-| `taipower_align/realtime_units.csv` | 人工決定 | A |
-| `tests/test_realtime_*.py`、`tests/fixtures/realtime/` | 測試與固定資料 | A |
-| `configs/config.yaml` | 新增三個路徑 | D |
-| `即時收集啟動.bat`、`開機自動啟動-即時收集.bat`、`停止即時收集.bat` | 啟動、自動啟動、停止 | D |
-| `.gitattributes` | `*.bat` 固定 CRLF（LF 行尾時 cmd.exe 的 goto 可能找不到標籤） | D |
-| `docs/SERVING.md` | 收集器操作說明 | D（內容由 A 提供） |
-| `docs/lineage/` 相關 CSV | 新來源、清洗規則、資料表、人工裁決 | A |
-| `log.md` | 儲存點 | 各自 |
+| 檔案 | 內容 |
+|---|---|
+| `src/ingest/realtime/config.py` | 讀 `configs/realtime.yaml` 與路徑 |
+| `src/ingest/realtime/timeutil.py` | 固定 UTC+8、時段取整與格式（parse、schedule、maintenance、status 共用） |
+| `src/ingest/realtime/candidates.py` | 人工決定檔的候選產生器（§5.3），執行期不用 |
+| `src/ingest/realtime/client.py` | 條件式請求，傳輸層可注入 |
+| `src/ingest/realtime/schedule.py` | 純函式：下一步做什麼、什麼時候做 |
+| `src/ingest/realtime/parse.py` | 純函式：原始位元組 → 解析結果或拒收代碼 |
+| `src/ingest/realtime/archive.py` | 封存與抓取紀錄的寫入、讀取、重放 |
+| `src/ingest/realtime/decisions.py` | 載入並驗證 `realtime_units.csv` 與 `plants.csv` |
+| `src/ingest/realtime/store.py` | schema、入庫、維度同步、抓取紀錄鏡像 |
+| `src/ingest/realtime/maintenance.py` | 日彙總、清除、缺口分類 |
+| `src/ingest/realtime/rebuild.py` | 從封存重建 |
+| `src/ingest/realtime/lock.py` | 單一實例鎖 |
+| `src/ingest/realtime/status.py` | `read_status()` |
+| `src/ingest/realtime/collector.py` | 主迴圈，串起以上模組 |
+| `src/ingest/realtime/__main__.py` | 指令列 |
+| `configs/realtime.yaml` | 行為參數 |
+| `taipower_align/realtime_units.csv` | 人工決定 |
+| `tests/test_realtime_*.py`、`tests/fixtures/realtime/` | 測試與固定資料 |
+| `configs/config.yaml` | 新增三個路徑 |
+| `即時收集啟動.bat`、`開機自動啟動-即時收集.bat`、`停止即時收集.bat` | 啟動、自動啟動、停止 |
+| `.gitattributes` | `*.bat` 固定 CRLF（LF 行尾時 cmd.exe 的 goto 可能找不到標籤） |
+| `docs/SERVING.md` | 收集器操作說明 |
+| `docs/lineage/` 相關 CSV | 新來源、清洗規則、資料表、人工裁決 |
+| `log.md` | 儲存點 |
 
 ### 11.2 流程
 

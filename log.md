@@ -2,6 +2,24 @@
 
 > 這份檔案在每個可驗證、可回退的儲存點更新。回退前需保留使用者原有的未提交變更。
 
+## CP-106 — 拿掉四人分工文件，開發規範移到 DEVELOPMENT.md
+
+- 時間：2026-11-01 +08:00
+- 狀態：已完成
+- 分支：`docs/solo-project-docs`
+- 起點：CP-105 把 README 改成「基於原專題的深度開發」，但 `docs/TEAM_4_ROLES.md` 仍是成員 A～D 的分工與角色 Prompt，
+  合併門檻檢查與即時收集器規格也引用它，和 README 互相矛盾。
+- 變更：
+  - 新增 `docs/DEVELOPMENT.md`：保留原文件裡和分工無關的開發規範（開始前、改動時、完成時）與「儲存點與合併檢查表」，
+    拿掉檔案所有權、交接單與跨 Owner 的條目。
+  - 刪除 `docs/TEAM_4_ROLES.md`（git 歷史仍可查）。
+  - 合併門檻檢查（`.claude/skills/pre-merge-check`）的規則說明、`check_merge.py` 的修正提示、報告模板與 `gate_rules.json`
+    改為引用 `docs/DEVELOPMENT.md`，條號對應新文件；「其他 Owner」改成「使用者」。
+  - 即時收集器規格（`docs/superpowers/specs/2026-09-24-realtime-ingest-design.md`）拿掉「主責／Owner」欄，§11 標題改為「檔案與流程」。
+  - log.md 舊儲存點裡提到團隊、TEAM_4_ROLES 的地方是歷史紀錄，不改。
+- 驗證：pytest 1,374 通過；ruff check／format、`git diff --check HEAD` 通過；本機跑合併門檻檢查。
+- 回退方式：`git revert` 本次 commit（會還原 `docs/TEAM_4_ROLES.md` 與各處引用）。
+
 ## CP-105 — README 改成「基於原專題的深度開發」並更新到 CP-104
 
 - 時間：2026-11-01 +08:00
