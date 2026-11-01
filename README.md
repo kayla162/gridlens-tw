@@ -6,7 +6,7 @@
 > **English summary** — A local-first Text2SQL system for Taiwan Power Company open data. Questions in Chinese are answered
 > by deterministic rules first; the long tail goes to a local LLM (Ollama, `qwen3:8b`). Every query passes an AST-based SQL
 > guard and a semantic guard. I added a local LLM evaluation with held-out sets, and SQL repairs that raised accuracy on
-> a set written before the last round of changes from 14/27 to 21/27. I also built a 10-minute realtime generation collector, dashboard and query path.
+> a set written before the last round of changes from 10/26 to 15/26 (and an earlier such set from 14/27 to 21/27). I also built a 10-minute realtime generation collector, dashboard and query path.
 
 ![Python](https://img.shields.io/badge/Python-3.12-3776ab)
 ![Local LLM](https://img.shields.io/badge/LLM-Ollama%20qwen3%3A8b%20(local)-1a5fb4)
@@ -44,7 +44,8 @@
   修過的 SQL 一樣要過所有守門。
 - 再補**答案形狀修正**（[answer_shape.py](src/text2sql/answer_shape.py)）：問「有幾座」卻列清單、問「各」卻只回總數、
   問「哪些」卻有重複列、問「最大的」卻回一串、自己多加問句沒提的條件。動手前先另寫 27 題、量好基準，
-  只拿它當成績：14 → 21。
+  只拿它當成績：14 → 21。再照剩下的錯修一輪（數電廠時去重、第 N 名、每組最大、同時有 A 和 B、模型自己編的條件），
+  同樣先另寫 26 題當成績：10 → 15。
 - 試過但拿掉的：把「結果有重複列」等問題退回給模型，分數反而從 13 掉到 11。
 
 **2. 即時發電：從收集、展示到用中文查**
@@ -85,11 +86,12 @@ flowchart LR
 
 規則答不出的題目交給本機 `qwen3:8b`（推理關）。用三份題庫量，比對的是查詢結果的值，不看欄名與順序：
 
-| 題庫 | 修正前 | 加答案形狀修正前 | 現在 |
-|---|---:|---:|---:|
-| **動手前寫好、沒調過的 27 題**（[fresh](benchmarks/llm_fresh_questions.json)） | — | 14 | **21**（兩次重跑相同） |
-| 第二輪找錯誤用的 20 題（[held-out](benchmarks/llm_holdout_questions.json)） | 3 | 9 | 16（照這份修過，偏樂觀） |
-| 第一輪找錯誤用的 20 題（[llm_questions](benchmarks/llm_questions.json)） | 5 | 15 | 17（照這份修過，偏樂觀） |
+| 題庫 | 修正前 | 加答案形狀修正前 | 第一輪形狀修正 | 現在 |
+|---|---:|---:|---:|---:|
+| **動手前寫好、沒調過的 26 題**（[fresh2](benchmarks/llm_fresh2_questions.json)） | — | — | 10 | **15**（兩次重跑相同） |
+| 上一輪動手前寫好的 27 題（[fresh](benchmarks/llm_fresh_questions.json)） | — | 14 | 21 | 26（照這份修過，偏樂觀） |
+| 第二輪找錯誤用的 20 題（[held-out](benchmarks/llm_holdout_questions.json)） | 3 | 9 | 16 | 16（照這份修過，偏樂觀） |
+| 第一輪找錯誤用的 20 題（[llm_questions](benchmarks/llm_questions.json)） | 5 | 15 | 17 | 18（照這份修過，偏樂觀） |
 
 學到的三件事：
 
@@ -99,12 +101,13 @@ flowchart LR
 
 4. **很多「理解題意」的錯其實是答案形狀錯**：問「有幾座」卻列清單、問「各」卻只回總數，問句說得夠清楚時程式改得好。
 
-結論是**本機 8B 模型在規則答不出、沒調過的題目上大約答對八成（21/27）**；剩下的錯多半真的要理解題意
-（「第三多」只取第一名、「同時有 A 和 B」寫成同一欄等於兩個值、數電廠時數成機組）。
+結論是**本機 8B 模型在規則答不出、沒調過的題目上大約答對六成（15/26）**；上一份 27 題修正後是 21，
+可見每份題庫的難度差很多，照錯誤修過的分數（26/27）不能當成績。剩下的錯多半真的要理解題意
+（「只有一部機組」寫成篩燃料、「有歧義」填成「對不到」、「原因寫著大修」用 `=` 比對）。
 完整實驗與每一步的數字見 [docs/LLM_EVALUATION.md](docs/LLM_EVALUATION.md)。
 
 ```bash
-uv run --extra local python -m eval.llm_eval --questions fresh   # 需要先開 Ollama
+uv run --extra local python -m eval.llm_eval --questions fresh2   # 需要先開 Ollama
 ```
 
 ## 即時發電

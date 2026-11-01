@@ -20,6 +20,12 @@
 修正前後都只拿它當成績，不照它調。
 
     uv run --extra local python -m eval.llm_eval --questions fresh --label fresh
+
+`benchmarks/llm_fresh2_questions.json` 是 CP-103 的 26 題：CP-102 之後剩下的錯（幾座電廠沒去重、
+第 N 名、每組最新、同欄位矛盾的條件）是在 `fresh` 上看到的，所以 `fresh` 也不能再當成績。
+規則同上：動程式前寫好、量好基準，只拿來計分。
+
+    uv run --extra local python -m eval.llm_eval --questions fresh2 --label fresh2
 """
 
 from __future__ import annotations
@@ -42,7 +48,8 @@ from serving.runtime import PROVIDER_ENV, build_runtime
 BENCHMARK = PROJECT_ROOT / "benchmarks" / "llm_questions.json"
 HOLDOUT = PROJECT_ROOT / "benchmarks" / "llm_holdout_questions.json"
 FRESH = PROJECT_ROOT / "benchmarks" / "llm_fresh_questions.json"
-QUESTION_SETS = {"main": BENCHMARK, "holdout": HOLDOUT, "fresh": FRESH}
+FRESH2 = PROJECT_ROOT / "benchmarks" / "llm_fresh2_questions.json"
+QUESTION_SETS = {"main": BENCHMARK, "holdout": HOLDOUT, "fresh": FRESH, "fresh2": FRESH2}
 
 
 def _number(value: object) -> float | None:
@@ -263,7 +270,7 @@ def main(argv: list[str] | None = None) -> int:
         default="main",
         help=(
             "main：llm_questions.json；holdout：CP-100 的另一批題目；"
-            "fresh：CP-102 動手前寫好、沒拿來調整過的題目"
+            "fresh：CP-102 動手前寫好、沒拿來調整過的題目；fresh2：CP-103 的同一種題目"
         ),
     )
     parser.add_argument("--database", type=Path, default=PROJECT_ROOT / "data/processed/power.db")

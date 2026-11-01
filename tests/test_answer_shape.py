@@ -11,6 +11,8 @@ from text2sql.sql_repair import repair_llm_query
 VALUES = {
     "v_unit.燃料": ["水", "重油", "天然氣", "輕柴油", "煤"],
     "v_re_generation.能源別": ["地熱", "太陽能", "陸域風力", "離岸風力"],
+    "v_unit.電廠": ["卓蘭發電廠", "協和發電廠", "台中發電廠"],
+    "v_unit.縣市": ["苗栗縣卓蘭鎮", "基隆市", "台中市龍井區"],
 }
 
 
@@ -182,3 +184,116 @@ def test_without_a_question_nothing_about_shape_changes() -> None:
     repair = repair_llm_query(sql, ["水", "day"], column_values=VALUES, max_rows=200)
 
     assert repair.query.sql == sql
+
+
+def test_counting_plants_with_count_star_counts_distinct_plants() -> None:
+    repair = _repair(
+        "南投縣一共有幾座電廠",
+        'SELECT COUNT(*) AS "電廠數" FROM v_unit WHERE "縣市" LIKE ? LIMIT 1',
+        ["南投縣%"],
+    )
+
+    assert repair.query.sql == (
+        'SELECT COUNT(DISTINCT "電廠") AS "電廠數" FROM v_unit WHERE "縣市" LIKE ? LIMIT 1'
+    )
+
+
+def test_counting_units_or_records_keeps_count_star() -> None:
+    units = 'SELECT COUNT(*) AS n FROM v_unit WHERE "燃料" = ? LIMIT 1'
+    kinds = 'SELECT COUNT(*) AS n FROM v_unit WHERE "電廠" = ? LIMIT 1'
+
+    assert _repair("燃煤機組有幾部", units, ["煤"]).query.sql == units
+    # 「幾種」數的是燃料，問句沒提燃料這個詞就不猜。
+    assert _repair("台中發電廠有幾種機組", kinds, ["台中發電廠"]).query.sql == kinds
+
+
+def test_the_nth_place_gets_an_offset() -> None:
+    repair = _repair(
+        "機組數第三多的電廠是哪一座",
+        'SELECT "電廠", COUNT(*) AS "機組數" FROM v_unit GROUP BY "電廠" '
+        'ORDER BY "機組數" DESC LIMIT 1',
+        [],
+    )
+
+    assert repair.query.sql.endswith("LIMIT 1 OFFSET 2")
+
+
+def test_the_top_n_is_not_turned_into_the_nth() -> None:
+    sql = 'SELECT "電廠" FROM v_unit GROUP BY "電廠" ORDER BY COUNT(*) DESC LIMIT 3'
+
+    assert _repair("機組數前三多的電廠", sql, []).query.sql == sql
+
+
+def test_the_latest_per_plant_is_a_max_per_group() -> None:
+    repair = _repair(
+        "每座電廠最近一次有機組商轉是哪一天",
+        'SELECT "電廠", "商轉日期" FROM v_unit '
+        'WHERE "電廠" IN (SELECT DISTINCT "電廠" FROM v_unit) '
+        'ORDER BY "商轉日期" DESC LIMIT 1',
+        [],
+    )
+
+    assert repair.query.sql == (
+        'SELECT "電廠", MAX("商轉日期") AS "商轉日期" FROM v_unit '
+        'WHERE "電廠" IN (SELECT DISTINCT "電廠" FROM v_unit) GROUP BY "電廠" LIMIT 200'
+    )
+
+
+def test_a_count_for_each_plant_drops_the_made_up_plant_and_groups() -> None:
+    repair = _repair(
+        "每座電廠的機組數，由多到少排列",
+        'SELECT COUNT(*) AS "機組數" FROM v_unit WHERE "電廠" = ? LIMIT 200',
+        ["卓蘭發電廠"],
+    )
+
+    assert repair.query.sql == (
+        'SELECT "電廠", COUNT(*) AS "機組數" FROM v_unit GROUP BY "電廠" LIMIT 200'
+    )
+    assert repair.query.params == ()
+
+
+def test_names_the_question_did_not_say_are_dropped() -> None:
+    repair = _repair(
+        "2026年7月20日類別為再生的機組欄位有幾個",
+        'SELECT COUNT(*) FROM v_unit WHERE "商轉日期" <= ? AND "燃料" = ? AND "縣市" = ? '
+        'AND "電廠" = ? LIMIT 1',
+        ["2026-07-31", "水", "苗栗縣卓蘭鎮", "卓蘭發電廠"],
+    )
+
+    assert repair.query.sql == (
+        'SELECT COUNT(*) FROM v_unit WHERE "商轉日期" <= ? AND "燃料" = ? LIMIT 1'
+    )
+    assert repair.query.params == ("2026-07-31", "水")
+
+
+def test_a_name_that_is_not_in_the_data_is_left_for_the_answer_check() -> None:
+    sql = 'SELECT DISTINCT "電廠" FROM v_unit WHERE "縣市" = ? LIMIT 200'
+
+    assert _repair("新北市有哪些電廠", sql, ["林口"]).query.params == ("林口",)
+
+
+def test_names_the_question_said_stay() -> None:
+    sql = 'SELECT COUNT(*) AS n FROM v_unit WHERE "電廠" = ? AND "縣市" LIKE ? LIMIT 1'
+    params = ["協和發電廠", "基隆市%"]
+
+    assert _repair("基隆的協和電廠有幾部機組", sql, params).query.params == tuple(params)
+
+
+def test_both_values_on_one_column_become_a_having() -> None:
+    repair = _repair(
+        "同時有重油和輕柴油機組的電廠",
+        'SELECT "電廠" FROM v_unit WHERE "燃料" = ? AND "燃料" = ? LIMIT 1',
+        ["重油", "輕柴油"],
+    )
+
+    assert repair.query.sql == (
+        'SELECT "電廠" FROM v_unit WHERE "燃料" IN (?, ?) GROUP BY "電廠" '
+        'HAVING COUNT(DISTINCT "燃料") = 2 LIMIT 200'
+    )
+    assert repair.query.params == ("重油", "輕柴油")
+
+
+def test_two_conditions_without_both_in_the_question_are_left_alone() -> None:
+    sql = 'SELECT "電廠" FROM v_unit WHERE "燃料" = ? AND "燃料" = ? LIMIT 200'
+
+    assert _repair("重油或輕柴油機組的電廠", sql, ["重油", "輕柴油"]).query.sql == sql
