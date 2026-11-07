@@ -13,7 +13,7 @@
 
 ![Python](https://img.shields.io/badge/Python-3.12-3776ab)
 ![Local LLM](https://img.shields.io/badge/LLM-Ollama%20qwen3%3A8b%20(local)-1a5fb4)
-![Tests](https://img.shields.io/badge/tests-1%2C374%20passing-2e7d32)
+![Tests](https://img.shields.io/badge/tests-1%2C376%20passing-2e7d32)
 ![License](https://img.shields.io/badge/license-MIT-14498c)
 
 ![GridLens TW 查詢中心：問「2026年7月20日出力前五名機組」，回 5 筆結果、類別比較長條圖與明細表](readme_pic.png)
@@ -26,7 +26,7 @@
 | 安全 | SQL 攻擊題 16／16 攔截、正常問題 0／20 誤攔；SQL 以語法樹檢查，權限在後端改寫 |
 | 本機 LLM（規則答不出的長尾） | 每輪先寫新題庫再修：最新一輪 15 → **20／28**，兩次重跑相同；最早一份沒調過的題庫從 3／20 起步 |
 | 即時資料 | 每 10 分鐘收集台電 204 個機組的發電量，先封存再入庫，壞了能從封存重建 |
-| 工程品質 | 1,374 項測試、CI 全程離線；每個改動都有可回退的紀錄（[log.md](log.md)） |
+| 工程品質 | 1,376 項測試、CI 全程離線；每個改動都有可回退的紀錄（[log.md](log.md)） |
 
 **技術**：Python、FastAPI、SQLite、sqlglot、Ollama（本機 LLM）、RAG（自寫字元 n-gram 檢索）、LLM guardrails、
 評測設計（對照實驗、held-out 題庫）、pytest、GitHub Actions。
