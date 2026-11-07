@@ -9,7 +9,9 @@ from ingest.build_db import build_database
 from ingest.validate import PROJECT_ROOT
 from serving import runtime as runtime_module
 from serving.runtime import RuntimeManager, _provider_settings, build_runtime
+from text2sql.embedding_retriever import FallbackRetriever
 from text2sql.llm import DisabledLLM, FakeLLM
+from text2sql.retriever import TfidfRetriever
 
 
 class StubLocalLLM:
@@ -337,3 +339,33 @@ def test_shipped_config_only_talks_to_a_local_ollama() -> None:
         assert settings["temperature"] == 0, "同一句每次生出不同 SQL，評測會失去意義"
         assert settings["model_env"] == "OLLAMA_MODEL"
     assert _provider_settings(config, "ollama")["extra_body"] == {"reasoning_effort": "none"}
+
+
+def test_offline_runtime_always_uses_ngram_even_when_embedding_is_requested(database: Path) -> None:
+    pipeline = build_runtime(database=database, mode="offline", retrieval_method="hybrid").pipeline
+    config = yaml.safe_load((PROJECT_ROOT / "configs/retriever.yaml").read_text(encoding="utf-8"))
+
+    assert isinstance(pipeline.retriever, TfidfRetriever)
+    assert pipeline.min_score == float(config["min_score"])
+
+
+def test_local_runtime_uses_the_embedding_thresholds(
+    database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("POWERQUERY_RETRIEVER", "embedding")
+    config = yaml.safe_load((PROJECT_ROOT / "configs/retriever.yaml").read_text(encoding="utf-8"))
+
+    pipeline = build_runtime(database=database, mode="local").pipeline
+
+    assert isinstance(pipeline.retriever, FallbackRetriever)
+    assert pipeline.min_score == float(config["embedding"]["min_score"])
+    assert pipeline.relative_score == float(config["embedding"]["relative_score"])
+
+
+def test_unknown_retriever_in_the_environment_fails_fast(
+    database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("POWERQUERY_RETRIEVER", "vector-db")
+
+    with pytest.raises(ValueError, match="檢索方式"):
+        build_runtime(database=database, mode="offline")

@@ -2,6 +2,25 @@
 
 > 這份檔案在每個可驗證、可回退的儲存點更新。回退前需保留使用者原有的未提交變更。
 
+## CP-114 — embedding 檢索與端到端比較：預設維持字元 n-gram
+
+- 時間：2026-11-08 +08:00
+- 狀態：已完成
+- 分支：`feat/portfolio-gaps`
+- 起點：找範例只用字元 n-gram TF-IDF，`configs/retriever.yaml` 自己寫著「換語意向量才會有本質改善」，但沒量過。
+- 變更：
+  - `src/text2sql/embedding_retriever.py`：`OllamaEmbedder`（`/api/embed`）、`EmbeddingRetriever`（cosine，語料向量以
+    SHA-256 指紋快取）、`HybridRetriever`（Reciprocal Rank Fusion，k=60）、`FallbackRetriever`（延遲建索引，失敗退回 n-gram）。
+  - `Text2SQLPipeline` 改收 `retriever_factory`，`reload_corpus` 也走同一個工廠；`build_runtime` 依
+    `configs/retriever.yaml` 的 `method` 或 `POWERQUERY_RETRIEVER` 選擇，離線模式一律 n-gram，打錯字直接報錯。
+  - `src/eval/retrieval_eval.py`：Hit@1／Hit@5／Precision@5／MRR；`eval.llm_eval --retriever`。
+  - bge-m3 門檻另外校準（min 0.5、relative 0.8）。
+- 結果：檢索指標 embedding 大勝（Hit@1 49%→69%、MRR 0.665→0.797），但五份題庫端到端答對 n-gram 103／embedding 96／hybrid 84（121 題）；
+  排除 300 秒逾時後配對檢定 p = 0.66／1.0，沒有差別。bge-m3＋qwen3:8b 放不進 6 GB 顯示卡，每題中位數 7 秒→37／73 秒。
+  預設維持 `ngram`，寫進 `docs/LLM_EVALUATION.md`「檢索」一節與 `docs/SERVING.md`。
+- 驗證：`tests/test_embedding_retriever.py`（假 embedder，CI 不需要 Ollama）與 `tests/test_runtime_modes.py` 新增 3 題通過；ruff 通過。
+- 回退方式：`git revert` 本次 commit；預設行為本來就沒變。
+
 ## CP-113 — 公開展示用的 Docker 映像與部署設定
 
 - 時間：2026-11-08 +08:00

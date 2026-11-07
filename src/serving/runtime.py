@@ -21,6 +21,11 @@ from ingest.realtime.config import load_config as load_realtime_config
 from ingest.validate import PROJECT_ROOT
 from text2sql.corpus import column_value_conflicts, column_values
 from text2sql.db import ReadOnlySQLite
+from text2sql.embedding_retriever import (
+    RETRIEVAL_METHODS,
+    OllamaEmbedder,
+    build_retriever_factory,
+)
 from text2sql.llm import DisabledLLM, LocalLLM
 from text2sql.pipeline import Text2SQLPipeline
 from text2sql.realtime_query import RealtimeQueryEngine
@@ -163,6 +168,66 @@ def _realtime_engine(
     )
 
 
+RETRIEVER_ENV = "POWERQUERY_RETRIEVER"
+
+
+def _retrieval_settings(
+    config: dict[str, Any],
+    *,
+    root: Path,
+    database: Path,
+    override: str | None,
+    llm_enabled: bool,
+) -> dict[str, Any]:
+    """Which retriever the long tail uses, with thresholds on that retriever's score scale.
+
+    `POWERQUERY_RETRIEVER` 優先於 retriever.yaml 的 `method`，評測參數再優先。離線模式不會呼叫模型，
+    檢索只是 trace 的一部分，一律用字元 n-gram，不讓公開服務去連 Ollama。
+    """
+
+    method = override or os.getenv(RETRIEVER_ENV, "").strip() or config.get("method", "ngram")
+    method = str(method).strip()
+    if method not in RETRIEVAL_METHODS:
+        raise ValueError(f"檢索方式必須是 {', '.join(RETRIEVAL_METHODS)} 之一，收到 {method!r}")
+    if not llm_enabled:
+        method = "ngram"
+    lexical_min = float(config.get("min_score", 0.0))
+    lexical_relative = float(config.get("relative_score", 0.0))
+    ngram = config["character_ngram"]
+    embedding = config.get("embedding") or {}
+    model = str(embedding.get("model", "bge-m3"))
+    safe_model = "".join(ch if ch.isalnum() else "-" for ch in model)
+    factory = build_retriever_factory(
+        method,
+        ngram_min=int(ngram["min"]),
+        ngram_max=int(ngram["max"]),
+        lexical_min_score=lexical_min,
+        lexical_relative_score=lexical_relative,
+        embed=OllamaEmbedder(
+            str(embedding.get("base_url", "http://127.0.0.1:11434")),
+            model,
+            timeout_seconds=float(embedding.get("timeout_seconds", 60)),
+        ),
+        model=model,
+        # 語料向量的快取放在資料庫旁邊（data/ 不進版控）；語料或模型一變，指紋不同就重算。
+        cache_path=database.parent / f"corpus_embeddings_{safe_model}.json",
+        logger=LOGGER.warning,
+    )
+    if method == "ngram":
+        return {
+            "method": method,
+            "factory": factory,
+            "min_score": lexical_min,
+            "relative_score": lexical_relative,
+        }
+    return {
+        "method": method,
+        "factory": factory,
+        "min_score": float(embedding.get("min_score", 0.0)),
+        "relative_score": float(embedding.get("relative_score", 0.0)),
+    }
+
+
 def build_runtime(
     *,
     database: Path | None = None,
@@ -174,6 +239,7 @@ def build_runtime(
     extra_body: dict[str, Any] | None = None,
     probe: Probe | None = None,
     retrieval_top_k: int | None = None,
+    retrieval_method: str | None = None,
 ) -> ServiceRuntime:
     """Build one immutable runtime.
 
@@ -234,6 +300,13 @@ def build_runtime(
         else DisabledLLM()
     )
     ngram = retriever_config["character_ngram"]
+    retrieval = _retrieval_settings(
+        retriever_config,
+        root=root,
+        database=database,
+        override=retrieval_method,
+        llm_enabled=active_mode == "local",
+    )
     sql_guard = SqlGuard(max_rows=int(guard_config["sql"]["max_rows"]))
     view_values = column_values(executor.execute, sql_guard.allowed_columns)
     pipeline = Text2SQLPipeline(
@@ -256,8 +329,9 @@ def build_runtime(
         top_k=int(retriever_config["top_k"]) if retrieval_top_k is None else retrieval_top_k,
         ngram_min=int(ngram["min"]),
         ngram_max=int(ngram["max"]),
-        min_score=float(retriever_config.get("min_score", 0.0)),
-        relative_score=float(retriever_config.get("relative_score", 0.0)),
+        min_score=retrieval["min_score"],
+        relative_score=retrieval["relative_score"],
+        retriever_factory=retrieval["factory"],
     )
     return ServiceRuntime(
         pipeline=pipeline,

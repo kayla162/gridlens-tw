@@ -176,6 +176,8 @@ uv run python -m ingest.realtime history download               # 下載最新 d
 有一部分在 CPU 上跑，每題秒數會隨機器負載變動。寫法唯一的錯（`LIMIT ?`、多送的空白參數、漏掉 LIMIT、`縣市 = '高雄市'` 這類說法、寫進 SQL 的字串值、問縣市卻按鄉鎮分組、分組欄位沒選出來）在守門之前直接修好，不再耗一輪重試。兩種模式都會檢查 LLM 寫的 SQL：值不在欄位的值清單、
 `LIKE` 沒有萬用字元、數字被當成字串、0 筆或被 LIMIT 截斷時，把原因交回模型重寫。
 
+找範例的方式由 [configs/retriever.yaml](../configs/retriever.yaml) 的 `method` 或環境變數 `POWERQUERY_RETRIEVER`（`ngram`／`embedding`／`hybrid`）決定，預設 `ngram`。`embedding` 需要 `ollama pull bge-m3`，語料向量快取在 `data/processed/corpus_embeddings_*.json`；連不上時自動退回 n-gram，離線模式一律 n-gram。為什麼預設不用 embedding 見 [LLM_EVALUATION](LLM_EVALUATION.md)「檢索」一節。
+
 `auto` 模式每 30 秒最多確認一次 Ollama 在不在（只問 `/v1/models`，1 秒逾時）；在就用本機 LLM，不在就退回離線規則。
 規則接得住的題目照樣不打 LLM。`local` 模式不偵測：Ollama 沒開時 LLM 那一步明確失敗（`LLM_UNAVAILABLE`），規則與澄清照常運作。
 公開服務以 `POWERQUERY_RUNTIME_MODE=offline` 固定只用規則。
