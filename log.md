@@ -2,6 +2,25 @@
 
 > 這份檔案在每個可驗證、可回退的儲存點更新。回退前需保留使用者原有的未提交變更。
 
+## CP-113 — 公開展示用的 Docker 映像與部署設定
+
+- 時間：2026-11-08 +08:00
+- 狀態：已完成
+- 分支：`feat/portfolio-gaps`
+- 起點：要試用只能在 Windows 上點 `.bat`，招募方不會這樣做；沒有能放進履歷的線上連結。
+- 變更：
+  - `Dockerfile`：`python:3.12-slim` ＋ uv（版本釘住），只裝核心相依（不含 Ollama client 與 dev），
+    建置時從 `taipower_align/` 重建資料庫；非 root 使用者、`HEALTHCHECK` 打 `/api/health`、照 `PORT` 環境變數聽埠。
+    `POWERQUERY_RUNTIME_MODE=offline`；管理介面維持只接受 localhost 的 Host，公開網址登入會被拒絕。
+  - `.dockerignore`：排除 `.env`、帳號名冊、執行期資料庫、`.git` 等。
+  - `render.yaml`（Render Blueprint，免費方案、手動部署）與 `docs/DEPLOY.md`（本機 Docker、Render、Hugging Face Spaces、重錄展示動畫）。
+  - `scripts/record_demo.py`：用本機 Edge（Playwright 的 msedge channel）依序問三題並組成 GIF；不是執行期相依。
+  - CI 新增 `docker` job：建映像、啟動、確認 `/api/health` 回 offline 且不是以 root 執行。
+- 驗證：本機 `docker build` 成功，映像 333 MB；容器的 `/api/health` 回 `active_mode: offline`；
+  `POST /api/query`「2026年7月備轉容量率最低是哪一天？」回 2026-07-05、10.23%；
+  以 `Host: gridlens-tw.onrender.com` 登入管理介面回 403。
+- 回退方式：`git revert` 本次 commit。
+
 ## CP-112 — 整理 repo：報告、Windows 啟動檔與設計文件
 
 - 時間：2026-11-08 +08:00
