@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from ingest.validate import PROJECT_ROOT
 
-STARTUP = "開機自動啟動-即時收集.bat"
+STARTUP = "scripts/windows/開機自動啟動-即時收集.bat"
 
 
 def test_the_startup_launcher_has_only_ascii_between_chcp_and_start() -> None:

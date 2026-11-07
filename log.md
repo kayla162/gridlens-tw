@@ -2,6 +2,23 @@
 
 > 這份檔案在每個可驗證、可回退的儲存點更新。回退前需保留使用者原有的未提交變更。
 
+## CP-112 — 整理 repo：報告、Windows 啟動檔與設計文件
+
+- 時間：2026-11-08 +08:00
+- 狀態：已完成
+- 分支：`feat/portfolio-gaps`
+- 起點：`reports/` 根目錄有約 70 份 LLM 評測報告，看不出哪份是現況；根目錄有 8 個中文檔名的 `.bat`；
+  `docs/superpowers/` 混了設計規格與給程式代理執行的逐步計畫（數千行、內容已在 commit 與 log 裡）。
+- 變更：
+  - LLM 評測報告移到 `reports/llm/`，新增 `reports/llm/README.md` 標出各題庫的現況報告；`eval.llm_eval` 預設輸出改成 `reports/llm/`。
+    文件與程式裡的連結一併更新；log.md 舊儲存點的路徑是歷史紀錄，不改。
+  - 根目錄只留 README 寫到的 `啟動.bat`、`即時收集啟動.bat`；其他 6 個（公開服務的啟停與帳密、開機自動啟動、停止收集）
+    移到 `scripts/windows/`，改用 `%~dp0..\..` 回到專案根目錄；開機自動啟動檔改呼叫 `..\..\即時收集啟動.bat`。
+    `SERVING.md`、`PUBLIC_OFFLINE_SERVING.md`、`public_offline_service.ps1` 的提示與啟動檔測試同步改路徑。
+  - 設計規格 `docs/superpowers/specs/` 改名 `docs/design/`；刪除 `docs/superpowers/plans/`（git 歷史可查）。
+- 驗證：pytest 1,382 通過（含 Windows 上實際執行搬移後啟動檔的測試）；ruff check／format 通過。
+- 回退方式：`git revert` 本次 commit。
+
 ## CP-111 — LLM 評測加上信賴區間與配對檢定
 
 - 時間：2026-11-08 +08:00

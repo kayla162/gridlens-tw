@@ -7,8 +7,8 @@
   只看「一邊對、一邊錯」的題目，用二項分布算雙尾 p 值。兩次都對或都錯的題目不提供差異的資訊。
 - **配對 bootstrap**：逐題重抽，給出準確率差的信賴區間，和 McNemar 互相對照。
 
-    uv run python -m eval.stats reports/llm_eval_ollama_fresh3_before.json \\
-        reports/llm_eval_ollama_fresh3_filters.json
+    uv run python -m eval.stats reports/llm/llm_eval_ollama_fresh3_before.json \\
+        reports/llm/llm_eval_ollama_fresh3_filters.json
 
 第一份是基準，後面每一份都和它配對比較；`--markdown` 另外輸出表格。
 """

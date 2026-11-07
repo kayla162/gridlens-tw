@@ -2,7 +2,7 @@
 
 > 狀態：已實作（feat/realtime-panel，CP-074）
 > 日期：2026-10-05
-> 前置：RT-1 即時收集器（`docs/superpowers/specs/2026-09-24-realtime-ingest-design.md`，PR #18）
+> 前置：RT-1 即時收集器（`docs/design/2026-09-24-realtime-ingest-design.md`，PR #18）
 > 範圍：RT-3 的第一段——網頁上的即時發電面板。自然語言查詢即時資料是 RT-3b，另寫規格。
 
 ## 1. 目標

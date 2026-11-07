@@ -3,7 +3,7 @@
 > 狀態：設計已逐段確認（2026-09-24，log.md CP-072）；RT-1 已實作（CP-073），本文已依實作結果同步。
 > 範圍：整體架構，以及三個子專案中的 RT-1（收集與儲存）。RT-2、RT-3 各自另寫規格。
 > 資料本身的分析（功率與能量的差別、與 `v_peak` 的涵蓋範圍比較、來源端實測）見
-> [docs/REALTIME_INGEST.md](../../REALTIME_INGEST.md)。
+> [docs/REALTIME_INGEST.md](../REALTIME_INGEST.md)。
 
 ## 1. 目標與範圍
 
@@ -22,7 +22,7 @@
 | 執行環境 | 與公開服務同一台 Windows，會關機或睡眠。每天有缺口是常態，不是異常 |
 | 電廠帳號權限 | 只看得到自己電廠的機組，依據是人工審核的「機組→電廠」對照；還沒決定的機組，電廠帳號看不到 |
 | 做法 | 獨立的收集器行程，先封存原始回應再入庫；`realtime.db` 可以從封存重建 |
-| 文件 | 本規格放 `docs/superpowers/specs/`；`docs/REALTIME_INGEST.md` 改成資料分析 |
+| 文件 | 本規格放 `docs/design/`；`docs/REALTIME_INGEST.md` 改成資料分析 |
 
 ### 1.3 RT-1 不做的事
 

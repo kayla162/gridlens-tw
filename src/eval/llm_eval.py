@@ -287,7 +287,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument("--database", type=Path, default=PROJECT_ROOT / "data/processed/power.db")
-    parser.add_argument("--out", type=Path, default=PROJECT_ROOT / "reports")
+    parser.add_argument("--out", type=Path, default=PROJECT_ROOT / "reports" / "llm")
     args = parser.parse_args(argv)
     report = evaluate(
         args.provider,

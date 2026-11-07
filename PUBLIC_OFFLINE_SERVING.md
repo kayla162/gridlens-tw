@@ -41,11 +41,11 @@
 
 ## 啟動與停止
 
-雙擊 `公開離線啟動.bat`。成功後視窗會顯示可分享的 HTTPS 網址。
+雙擊 `scripts/windows/公開離線啟動.bat`。成功後視窗會顯示可分享的 HTTPS 網址。
 
-雙擊 `停止公開服務.bat`，只會關閉 PowerQuery 的 HTTPS 8443 Funnel 與本機 8766 程序，不會停止 LH 專案。
+雙擊 `scripts/windows/停止公開服務.bat`，只會關閉 PowerQuery 的 HTTPS 8443 Funnel 與本機 8766 程序，不會停止 LH 專案。
 
-雙擊 `顯示公開管理密碼.bat` 可再次查看兩組帳號與密碼。
+雙擊 `scripts/windows/顯示公開管理密碼.bat` 可再次查看兩組帳號與密碼。
 
 名冊被刪掉或要重新產生時：
 
@@ -72,7 +72,7 @@ Text2SQL 查詢失敗的結構化紀錄仍位於 `data/processed/.powerquery-dat
 ## Windows 登入後自動啟動
 
 1. 按 `Win + R`，輸入 `shell:startup`。
-2. 對 `開機自動啟動-公開離線.bat` 建立捷徑。
+2. 對 `scripts/windows/開機自動啟動-公開離線.bat` 建立捷徑。
 3. 把捷徑放入開啟的「啟動」資料夾；不要複製批次檔本身。
 
 這種方式會在使用者登入 Windows 後啟動；電腦關機、睡眠、Tailscale 登出或網路中斷時，公開網址將無法使用。

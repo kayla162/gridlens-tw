@@ -155,7 +155,7 @@ make test-all && make eval                   # 全套測試與離線評測
 | 設計與踩過的坑 | [SPEC](docs/SPEC.md)、[log.md](log.md)（每一步的決定、驗證與回退方式） |
 | 本機 LLM 評測 | [LLM_EVALUATION](docs/LLM_EVALUATION.md)、[評測](docs/EVALUATION.md)、[Text2SQL 管線](docs/TEXT2SQL_PIPELINE.md) |
 | 守門 | [語意守門](docs/SEMANTIC_GUARD.md)、[系統卡](docs/SYSTEM_CARD.md) |
-| 即時發電 | [來源分析](docs/REALTIME_INGEST.md)、[收集器規格](docs/superpowers/specs/2026-09-24-realtime-ingest-design.md) |
+| 即時發電 | [來源分析](docs/REALTIME_INGEST.md)、[收集器規格](docs/design/2026-09-24-realtime-ingest-design.md) |
 | 操作與 API | [SERVING](docs/SERVING.md)、[API 契約](src/serving/API_CONTRACT.md)、[公開服務](PUBLIC_OFFLINE_SERVING.md) |
 | 資料 | [資料字典](docs/DATA_DICTIONARY.md)、[對齊方法](taipower_align/README.md) |
 

@@ -13,8 +13,8 @@ from ingest.validate import PROJECT_ROOT
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows batch launcher")
 
 COLLECT = "即時收集啟動.bat"
-STARTUP = "開機自動啟動-即時收集.bat"
-STOP = "停止即時收集.bat"
+STARTUP = "scripts/windows/開機自動啟動-即時收集.bat"
+STOP = "scripts/windows/停止即時收集.bat"
 
 # 第一次呼叫回 1（模擬當掉），之後回 3（已有一份在跑），用來驗證「重啟一次、看到 3 就停」。
 FAKE_UV = """@echo off
@@ -32,6 +32,7 @@ def _run(tmp_path: Path, launcher: str) -> tuple[subprocess.CompletedProcess[str
     fake_bin = tmp_path / "fake tools"
     project.mkdir(parents=True)
     fake_bin.mkdir()
+    (project / launcher).parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(PROJECT_ROOT / launcher, project / launcher)
     (fake_bin / "uv.cmd").write_text(FAKE_UV, encoding="ascii")
     log = tmp_path / "uv calls.log"
@@ -79,7 +80,7 @@ def test_startup_launcher_opens_the_collector_minimised() -> None:
     content = (PROJECT_ROOT / STARTUP).read_text(encoding="utf-8")
 
     assert "chcp 65001" in content
-    assert f'/min "%~dp0{COLLECT}"' in content
+    assert f'/min "%~dp0..\\..\\{COLLECT}"' in content
 
 
 def test_startup_launcher_really_starts_the_collector_from_a_big5_console(tmp_path: Path) -> None:
@@ -91,6 +92,7 @@ def test_startup_launcher_really_starts_the_collector_from_a_big5_console(tmp_pa
 
     project = tmp_path / "台電 查詢專案"
     project.mkdir()
+    (project / STARTUP).parent.mkdir(parents=True)
     shutil.copyfile(PROJECT_ROOT / STARTUP, project / STARTUP)
     marker = tmp_path / "collector started.txt"
     # `start` 用 cmd /K 開新視窗；結尾的 exit 讓那個視窗自己關掉。

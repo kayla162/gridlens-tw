@@ -1,5 +1,5 @@
 # 即時機組發電量收集器（RT-1）的行為參數；路徑在 configs/config.yaml 的 paths。
-# 設計見 docs/superpowers/specs/2026-09-24-realtime-ingest-design.md。
+# 設計見 docs/design/2026-09-24-realtime-ingest-design.md。
 source:
   url: https://service.taipower.com.tw/data/opendata/apply/file/d006001/001.json
   timeout_seconds: 20
