@@ -59,4 +59,4 @@ uv run --with playwright --with pillow python scripts/record_demo.py --url http:
 docker stop gridlens-demo
 ```
 
-腳本用本機的 Edge 開無頭瀏覽器，依序問三題（一般查詢、資料涵蓋範圍的揭露、惡意 SQL），截圖後組成 `docs/media/demo.gif`。
+腳本用本機的 Edge 開無頭瀏覽器，依序問三題（一般查詢、揭露資料涵蓋範圍、語意守門拒答），截圖後組成 `docs/media/demo.gif`。
