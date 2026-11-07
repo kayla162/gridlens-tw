@@ -2,6 +2,21 @@
 
 > 這份檔案在每個可驗證、可回退的儲存點更新。回退前需保留使用者原有的未提交變更。
 
+## CP-111 — LLM 評測加上信賴區間與配對檢定
+
+- 時間：2026-11-08 +08:00
+- 狀態：已完成
+- 分支：`feat/portfolio-gaps`
+- 起點：每份 LLM 題庫只有 26～28 題，README 的「15 → 20」沒有說明差距是不是運氣。
+- 變更：
+  - 新增 `src/eval/stats.py`（不加相依套件）：Wilson 信賴區間、McNemar 精確檢定（逐題配對，只看不一致的題目）、
+    配對 bootstrap（固定 seed，可重現）。`python -m eval.stats <基準.json> <候選.json>...`，`--markdown` 輸出表格。
+  - 用既有報告算三輪成績：第一輪 p = 0.016，第二、三輪各 p = 0.062（單輪不到 0.05）；三輪都沒有改壞任何一題，
+    合併 0／17 → p ≈ 0.00002。推理開對推理關 p = 0.125。寫進 `docs/LLM_EVALUATION.md`。
+  - `tests/test_eval_stats.py` 6 個測試：教科書數值、對稱性、bootstrap 可重現、依題目 id 配對且略過規則接住的題目、CLI 輸出。
+- 驗證：新測試 6 通過；ruff check／format 通過。
+- 回退方式：`git revert` 本次 commit。
+
 ## CP-110 — README 測試數更新為 1,376
 
 - 時間：2026-11-07 +08:00
