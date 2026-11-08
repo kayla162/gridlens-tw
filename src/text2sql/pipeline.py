@@ -26,7 +26,7 @@ from text2sql.llm import (
     parse_generated_query,
 )
 from text2sql.prompt import build_prompt
-from text2sql.retriever import TfidfRetriever
+from text2sql.retriever import RetrievedExample, TfidfRetriever
 from text2sql.router import missing_parameter_clarification, route, suggest_scope_question
 from text2sql.scope_guard import ScopeError, ScopeGuard
 from text2sql.semantic_guard import SemanticDecision
@@ -98,6 +98,20 @@ class AllowAllSemanticGuard:
         return None
 
 
+class RetrieverProtocol(Protocol):
+    def retrieve(
+        self,
+        question: str,
+        *,
+        top_k: int = 5,
+        min_score: float = 0.0,
+        relative_score: float = 0.0,
+    ) -> list[RetrievedExample]: ...
+
+
+RetrieverFactory = Callable[[list[dict[str, Any]]], RetrieverProtocol]
+
+
 @dataclass(frozen=True)
 class PipelineResponse:
     success: bool
@@ -135,6 +149,7 @@ class Text2SQLPipeline:
         ngram_max: int = 4,
         min_score: float = 0.0,
         relative_score: float = 0.0,
+        retriever_factory: RetrieverFactory | None = None,
     ):
         if max_attempts < 1:
             raise ValueError("max_attempts 必須至少是 1")
@@ -145,10 +160,12 @@ class Text2SQLPipeline:
         self._ngram_min = ngram_min
         self._ngram_max = ngram_max
         self._corpus_lock = RLock()
-        self.corpus = load_corpus(self.corpus_path)
-        self.retriever = TfidfRetriever(
-            self.corpus["examples"], minimum=ngram_min, maximum=ngram_max
+        # 預設是字元 n-gram；runtime 依 retriever.yaml 的 method 換成 embedding 或混合檢索。
+        self._retriever_factory = retriever_factory or (
+            lambda examples: TfidfRetriever(examples, minimum=ngram_min, maximum=ngram_max)
         )
+        self.corpus = load_corpus(self.corpus_path)
+        self.retriever = self._retriever_factory(self.corpus["examples"])
         self.data_range = data_range
         self.peak_columns = peak_columns
         self.plants = plants or set()
@@ -168,11 +185,7 @@ class Text2SQLPipeline:
         """Atomically replace the retrieval snapshot used by subsequent queries."""
         next_path = Path(corpus_path) if corpus_path is not None else self.corpus_path
         corpus = load_corpus(next_path)
-        retriever = TfidfRetriever(
-            corpus["examples"],
-            minimum=self._ngram_min,
-            maximum=self._ngram_max,
-        )
+        retriever = self._retriever_factory(corpus["examples"])
         with self._corpus_lock:
             self.corpus_path = next_path
             self.corpus = corpus

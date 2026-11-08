@@ -8,7 +8,7 @@
 
 | 想知道的事 | 看這份文件 |
 |---|---|
-| 完整系統規格（分層、表定義、附錄 A 語意守門 9 條規則） | [設計規格](superpowers/specs/2026-09-09-text2sql-taipower-design.md) |
+| 完整系統規格（分層、表定義、附錄 A 語意守門 9 條規則） | [設計規格](design/2026-09-09-text2sql-taipower-design.md) |
 | 資料字典（物理表、語意檢視、單位） | [DATA_DICTIONARY.md](DATA_DICTIONARY.md) |
 | 查詢管線契約（輸入、輸出、管線順序） | [TEXT2SQL_PIPELINE.md](TEXT2SQL_PIPELINE.md) |
 | 語意守門契約（四種決策與依據） | [SEMANTIC_GUARD.md](SEMANTIC_GUARD.md) |
@@ -73,7 +73,7 @@ flowchart LR
 - `clarify`：名稱或日期條件不明確，需要使用者補充後才能查詢。
 - `pass`：沒有命中任何規則。
 
-完整 9 條規則與 SQL 形狀定義見[專案規格附錄 A](superpowers/specs/2026-09-09-text2sql-taipower-design.md#附錄-a語意守門規則全表)，決策契約見 [SEMANTIC_GUARD.md](SEMANTIC_GUARD.md)。
+完整 9 條規則與 SQL 形狀定義見[專案規格附錄 A](design/2026-09-09-text2sql-taipower-design.md#附錄-a語意守門規則全表)，決策契約見 [SEMANTIC_GUARD.md](SEMANTIC_GUARD.md)。
 
 ### 1.3 增量語料學習
 
@@ -405,7 +405,7 @@ v_*             提供給 Text2SQL 的中文語意檢視
 text2SQL_project/
 ├── README.md                 # 專案入口（非技術讀者也能讀完）
 ├── docs/SPEC.md              # 本文件：細節、決策與踩坑
-├── docs/superpowers/specs/   # 系統、資料、評測完整規格
+├── docs/design/   # 系統、資料、評測完整規格
 ├── docs/lineage/             # 資料血緣五份 CSV
 ├── src/ingest/               # 下載、封存、驗證、建庫
 ├── src/align/                # 對齊層純函式（無 I/O）

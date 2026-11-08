@@ -2,6 +2,92 @@
 
 > 這份檔案在每個可驗證、可回退的儲存點更新。回退前需保留使用者原有的未提交變更。
 
+## CP-115 — 本機模型比較：qwen3:8b vs qwen3:4b vs qwen2.5-coder:7b
+
+- 時間：2026-11-08 +08:00
+- 狀態：已完成
+- 分支：`feat/portfolio-gaps`
+- 起點：一直只用 `qwen3:8b`，答不出「為什麼選這個模型」。
+- 變更：
+  - `src/eval/compare_models.py`：`run` 對每個模型跑五份題庫（qwen3 系列關推理），記錄 Ollama `/api/ps` 的顯示卡記憶體；
+    `summarize` 產生 `reports/llm/model_comparison.md`：合計答對、Wilson 區間、答錯／沒有回答、秒數中位數，
+    並以第一個模型為基準做合併 McNemar 配對檢定。缺報告時拒絕產表。
+  - `docs/LLM_EVALUATION.md`「為什麼是 qwen3:8b？」一節；README 加比較表、GIF、Docker、檢索與顯著性結果，更新路徑與測試數。
+- 結果（121 題）：qwen3:8b 102、qwen2.5-coder:7b 92（p = 0.11，每題 2.1 秒 vs 12.8 秒）、qwen3:4b 67（p < 0.001）。
+  預設維持 qwen3:8b；雲端上限模型沒做（專題全程地端，也沒有 API key）。
+- 驗證：`tests/test_compare_models.py` 3 題；全套測試、ruff、`git diff --check` 通過。
+- 回退方式：`git revert` 本次 commit；不影響執行期行為。
+
+## CP-114 — embedding 檢索與端到端比較：預設維持字元 n-gram
+
+- 時間：2026-11-08 +08:00
+- 狀態：已完成
+- 分支：`feat/portfolio-gaps`
+- 起點：找範例只用字元 n-gram TF-IDF，`configs/retriever.yaml` 自己寫著「換語意向量才會有本質改善」，但沒量過。
+- 變更：
+  - `src/text2sql/embedding_retriever.py`：`OllamaEmbedder`（`/api/embed`）、`EmbeddingRetriever`（cosine，語料向量以
+    SHA-256 指紋快取）、`HybridRetriever`（Reciprocal Rank Fusion，k=60）、`FallbackRetriever`（延遲建索引，失敗退回 n-gram）。
+  - `Text2SQLPipeline` 改收 `retriever_factory`，`reload_corpus` 也走同一個工廠；`build_runtime` 依
+    `configs/retriever.yaml` 的 `method` 或 `POWERQUERY_RETRIEVER` 選擇，離線模式一律 n-gram，打錯字直接報錯。
+  - `src/eval/retrieval_eval.py`：Hit@1／Hit@5／Precision@5／MRR；`eval.llm_eval --retriever`。
+  - bge-m3 門檻另外校準（min 0.5、relative 0.8）。
+- 結果：檢索指標 embedding 大勝（Hit@1 49%→69%、MRR 0.665→0.797），但五份題庫端到端答對 n-gram 103／embedding 96／hybrid 84（121 題）；
+  排除 300 秒逾時後配對檢定 p = 0.66／1.0，沒有差別。bge-m3＋qwen3:8b 放不進 6 GB 顯示卡，每題中位數 7 秒→37／73 秒。
+  預設維持 `ngram`，寫進 `docs/LLM_EVALUATION.md`「檢索」一節與 `docs/SERVING.md`。
+- 驗證：`tests/test_embedding_retriever.py`（假 embedder，CI 不需要 Ollama）與 `tests/test_runtime_modes.py` 新增 3 題通過；ruff 通過。
+- 回退方式：`git revert` 本次 commit；預設行為本來就沒變。
+
+## CP-113 — 公開展示用的 Docker 映像與部署設定
+
+- 時間：2026-11-08 +08:00
+- 狀態：已完成
+- 分支：`feat/portfolio-gaps`
+- 起點：要試用只能在 Windows 上點 `.bat`，招募方不會這樣做；沒有能放進履歷的線上連結。
+- 變更：
+  - `Dockerfile`：`python:3.12-slim` ＋ uv（版本釘住），只裝核心相依（不含 Ollama client 與 dev），
+    建置時從 `taipower_align/` 重建資料庫；非 root 使用者、`HEALTHCHECK` 打 `/api/health`、照 `PORT` 環境變數聽埠。
+    `POWERQUERY_RUNTIME_MODE=offline`；管理介面維持只接受 localhost 的 Host，公開網址登入會被拒絕。
+  - `.dockerignore`：排除 `.env`、帳號名冊、執行期資料庫、`.git` 等。
+  - `render.yaml`（Render Blueprint，免費方案、手動部署）與 `docs/DEPLOY.md`（本機 Docker、Render、Hugging Face Spaces、重錄展示動畫）。
+  - `scripts/record_demo.py`：用本機 Edge（Playwright 的 msedge channel）依序問三題並組成 GIF；不是執行期相依。
+  - CI 新增 `docker` job：建映像、啟動、確認 `/api/health` 回 offline 且不是以 root 執行。
+- 驗證：本機 `docker build` 成功，映像 333 MB；容器的 `/api/health` 回 `active_mode: offline`；
+  `POST /api/query`「2026年7月備轉容量率最低是哪一天？」回 2026-07-05、10.23%；
+  以 `Host: gridlens-tw.onrender.com` 登入管理介面回 403。
+- 回退方式：`git revert` 本次 commit。
+
+## CP-112 — 整理 repo：報告、Windows 啟動檔與設計文件
+
+- 時間：2026-11-08 +08:00
+- 狀態：已完成
+- 分支：`feat/portfolio-gaps`
+- 起點：`reports/` 根目錄有約 70 份 LLM 評測報告，看不出哪份是現況；根目錄有 8 個中文檔名的 `.bat`；
+  `docs/superpowers/` 混了設計規格與給程式代理執行的逐步計畫（數千行、內容已在 commit 與 log 裡）。
+- 變更：
+  - LLM 評測報告移到 `reports/llm/`，新增 `reports/llm/README.md` 標出各題庫的現況報告；`eval.llm_eval` 預設輸出改成 `reports/llm/`。
+    文件與程式裡的連結一併更新；log.md 舊儲存點的路徑是歷史紀錄，不改。
+  - 根目錄只留 README 寫到的 `啟動.bat`、`即時收集啟動.bat`；其他 6 個（公開服務的啟停與帳密、開機自動啟動、停止收集）
+    移到 `scripts/windows/`，改用 `%~dp0..\..` 回到專案根目錄；開機自動啟動檔改呼叫 `..\..\即時收集啟動.bat`。
+    `SERVING.md`、`PUBLIC_OFFLINE_SERVING.md`、`public_offline_service.ps1` 的提示與啟動檔測試同步改路徑。
+  - 設計規格 `docs/superpowers/specs/` 改名 `docs/design/`；刪除 `docs/superpowers/plans/`（git 歷史可查）。
+- 驗證：pytest 1,382 通過（含 Windows 上實際執行搬移後啟動檔的測試）；ruff check／format 通過。
+- 回退方式：`git revert` 本次 commit。
+
+## CP-111 — LLM 評測加上信賴區間與配對檢定
+
+- 時間：2026-11-08 +08:00
+- 狀態：已完成
+- 分支：`feat/portfolio-gaps`
+- 起點：每份 LLM 題庫只有 26～28 題，README 的「15 → 20」沒有說明差距是不是運氣。
+- 變更：
+  - 新增 `src/eval/stats.py`（不加相依套件）：Wilson 信賴區間、McNemar 精確檢定（逐題配對，只看不一致的題目）、
+    配對 bootstrap（固定 seed，可重現）。`python -m eval.stats <基準.json> <候選.json>...`，`--markdown` 輸出表格。
+  - 用既有報告算三輪成績：第一輪 p = 0.016，第二、三輪各 p = 0.062（單輪不到 0.05）；三輪都沒有改壞任何一題，
+    合併 0／17 → p ≈ 0.00002。推理開對推理關 p = 0.125。寫進 `docs/LLM_EVALUATION.md`。
+  - `tests/test_eval_stats.py` 6 個測試：教科書數值、對稱性、bootstrap 可重現、依題目 id 配對且略過規則接住的題目、CLI 輸出。
+- 驗證：新測試 6 通過；ruff check／format 通過。
+- 回退方式：`git revert` 本次 commit。
+
 ## CP-110 — README 測試數更新為 1,376
 
 - 時間：2026-11-07 +08:00

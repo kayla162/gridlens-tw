@@ -1,0 +1,13 @@
+# Render Blueprint：在 Render 選 New → Blueprint，指向這個 repo 就會照這份建立服務。
+# 免費方案閒置約 15 分鐘會休眠，第一次開啟要等它醒來（約 1 分鐘）。細節見 docs/DEPLOY.md。
+services:
+  - type: web
+    name: gridlens-tw
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: false
+    envVars:
+      - key: POWERQUERY_RUNTIME_MODE
+        value: offline

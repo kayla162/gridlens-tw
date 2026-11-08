@@ -1,0 +1,22 @@
+# 執行期產物與機密不進映像；資料庫在建置時從 taipower_align/ 重建。
+.git
+.github
+.claude
+.venv
+.ruff_cache
+.pytest_cache
+**/__pycache__
+*.egg-info
+data/
+logs/
+.env
+configs/accounts.yaml
+.powerquery-public/
+reports/merge_check/
+releases/
+/files/
+架構參考/
+*.bat
+scripts/windows/
+readme_*.png
+docs/media/

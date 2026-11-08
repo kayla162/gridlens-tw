@@ -43,15 +43,15 @@ uv run powerquery --json "天然氣機組共有幾台？"
 
 ## 即時資料收集器
 
-> 收集器只負責收資料；總覽頁的面板（RT-3a）與查詢中心的即時問句（RT-3b，見下方「[用中文查即時資料](#用中文查即時資料)」）唯讀使用它。設計見[即時機組發電量設計規格](superpowers/specs/2026-09-24-realtime-ingest-design.md)。
+> 收集器只負責收資料；總覽頁的面板（RT-3a）與查詢中心的即時問句（RT-3b，見下方「[用中文查即時資料](#用中文查即時資料)」）唯讀使用它。設計見[即時機組發電量設計規格](design/2026-09-24-realtime-ingest-design.md)。
 
 收集器是獨立的常駐程式，每 10 分鐘向台電抓一次「各機組發電量即時資訊」（`d006001`）。原始回應先 gzip 封存到 `data/realtime/archive/`，再寫進 `data/processed/realtime.db`。它和網頁服務互不相干：重啟服務不影響收集，收集器也不必跟著服務一起啟動。每小時的維護（重新套用人工決定、對帳、彙總與清除）若出錯只會記錄，不會中斷抓取。
 
 ### 啟動與停止
 
 - 雙擊 [`即時收集啟動.bat`](../即時收集啟動.bat)：開一個視窗持續收集，異常結束時 60 秒後自動重啟；同一時間只會有一份在跑。
-- 登入後自動啟動：按 `Win + R` 輸入 `shell:startup`，把 [`開機自動啟動-即時收集.bat`](../開機自動啟動-即時收集.bat) 的捷徑放進去。電腦睡眠或關機期間收不到資料，那些時段會記成缺口。
-- 雙擊 [`停止即時收集.bat`](../停止即時收集.bat)，或在收集器視窗按 `Ctrl+C`。
+- 登入後自動啟動：按 `Win + R` 輸入 `shell:startup`，把 [`scripts/windows/開機自動啟動-即時收集.bat`](../scripts/windows/開機自動啟動-即時收集.bat) 的捷徑放進去。電腦睡眠或關機期間收不到資料，那些時段會記成缺口。
+- 雙擊 [`scripts/windows/停止即時收集.bat`](../scripts/windows/停止即時收集.bat)，或在收集器視窗按 `Ctrl+C`。
 
 手動操作：
 
@@ -92,7 +92,7 @@ uv run python -m ingest.realtime history download               # 下載最新 d
 - 匯入只存每日彙總，並封存原檔；`rebuild` 會連歷史一起重放。重複匯入同一份檔案不會有任何變化。
 - 同一天同一部機組兩邊都有時，取樣點數多的為準，一樣多取即時。
 - `d006010` 沒有民營電廠與購電彙總列：問「四月風力發了多少度」只會是台電自有的那部分，答案會附上這個限制。
-- 設計見 [RT-2 規格](superpowers/specs/2026-10-25-realtime-history-design.md)。
+- 設計見 [RT-2 規格](design/2026-10-25-realtime-history-design.md)。
 
 ### 資料治理
 
@@ -175,6 +175,8 @@ uv run python -m ingest.realtime history download               # 下載最新 d
 數字來自 `python -m eval.llm_eval`（見 README「本機 LLM 評測」），在 GTX 1050 Ti（4 GB）上量的：`qwen3:8b` 放不進顯示記憶體，
 有一部分在 CPU 上跑，每題秒數會隨機器負載變動。寫法唯一的錯（`LIMIT ?`、多送的空白參數、漏掉 LIMIT、`縣市 = '高雄市'` 這類說法、寫進 SQL 的字串值、問縣市卻按鄉鎮分組、分組欄位沒選出來）在守門之前直接修好，不再耗一輪重試。兩種模式都會檢查 LLM 寫的 SQL：值不在欄位的值清單、
 `LIKE` 沒有萬用字元、數字被當成字串、0 筆或被 LIMIT 截斷時，把原因交回模型重寫。
+
+找範例的方式由 [configs/retriever.yaml](../configs/retriever.yaml) 的 `method` 或環境變數 `POWERQUERY_RETRIEVER`（`ngram`／`embedding`／`hybrid`）決定，預設 `ngram`。`embedding` 需要 `ollama pull bge-m3`，語料向量快取在 `data/processed/corpus_embeddings_*.json`；連不上時自動退回 n-gram，離線模式一律 n-gram。為什麼預設不用 embedding 見 [LLM_EVALUATION](LLM_EVALUATION.md)「檢索」一節。
 
 `auto` 模式每 30 秒最多確認一次 Ollama 在不在（只問 `/v1/models`，1 秒逾時）；在就用本機 LLM，不在就退回離線規則。
 規則接得住的題目照樣不打 LLM。`local` 模式不偵測：Ollama 沒開時 LLM 那一步明確失敗（`LLM_UNAVAILABLE`），規則與澄清照常運作。

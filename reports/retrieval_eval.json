@@ -1,0 +1,27 @@
+{
+  "generated_at": "2026-11-07T17:00:42+00:00",
+  "model": "bge-m3",
+  "queries": 126,
+  "examples": 77,
+  "top_k": 5,
+  "results": {
+    "ngram": {
+      "hit_at_1": 0.4921,
+      "hit_at_5": 0.873,
+      "precision_at_5": 0.346,
+      "mrr": 0.6652
+    },
+    "embedding": {
+      "hit_at_1": 0.6905,
+      "hit_at_5": 0.9365,
+      "precision_at_5": 0.4619,
+      "mrr": 0.7969
+    },
+    "hybrid": {
+      "hit_at_1": 0.6587,
+      "hit_at_5": 0.9286,
+      "precision_at_5": 0.4175,
+      "mrr": 0.7713
+    }
+  }
+}

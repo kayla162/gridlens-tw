@@ -248,7 +248,7 @@ function Start-PublicOfflineService {
     if ($null -ne $tracked) {
         $health = Get-OfflineHealth
         if ($null -eq $health) {
-            throw "已追蹤的公開程序存在，但離線健康檢查失敗。請先執行 停止公開服務.bat。"
+            throw "已追蹤的公開程序存在，但離線健康檢查失敗。請先執行 scripts\windows\停止公開服務.bat。"
         }
         $publicUrl = Enable-PublicFunnel
         Write-ServiceLog "公開離線服務已在執行：$publicUrl"

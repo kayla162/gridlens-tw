@@ -26,3 +26,21 @@ jobs:
           POWERQUERY_RUNTIME_MODE: offline
         run: uv run pytest
 
+
+  docker:
+    # 公開展示用的映像要建得起來、起得來，且只用離線規則。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t gridlens-tw:ci .
+      - name: Smoke test
+        run: |
+          docker run -d --name gridlens -p 8000:8000 gridlens-tw:ci
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8000/api/health > health.json && break; sleep 1; done
+          cat health.json
+          grep -q '"active_mode":"offline"' health.json
+          docker exec gridlens id -u | grep -qv '^0$'
+      - name: Container logs
+        if: always()
+        run: docker logs gridlens || true

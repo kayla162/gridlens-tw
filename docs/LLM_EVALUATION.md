@@ -24,7 +24,7 @@
 - **題庫**：[benchmarks/llm_questions.json](../benchmarks/llm_questions.json)，20 題「離線規則接不住、但資料答得出來」的問題，
   每題附人工核對過的標準答案 SQL。測試會確認每一題真的到得了 LLM：規則變強就換題，不讓分數悄悄變好看。
 - **比對**：執行模型寫的 SQL，與標準答案比**值**（不看欄名與順序，瓩／萬瓩都算對），並區分「答對」「答錯但看起來正常」「沒有回答」。
-- **工具**：`uv run --extra local python -m eval.llm_eval`（加 `--no-rag` 關掉檢索範例做對照），報告在 [reports/](../reports/llm_eval_ollama_holdout.md)。
+- **工具**：`uv run --extra local python -m eval.llm_eval`（加 `--no-rag` 關掉檢索範例做對照），報告在 [reports/](../reports/llm/llm_eval_ollama_holdout.md)。
 
 三組對照實驗，把兩個改動的效果分開：
 
@@ -52,7 +52,7 @@
 總分一樣，但有 7 題的結果變了、方向兩邊都有：範例查的是同一張表時它幫得上忙（「台中#1 7 月平均尖峰出力」照範例寫出 `AVG` 與正確月份），
 範例只是字面像時它會帶偏（「哪一座電廠的機組數最多」照抄核能範例去查 `v_peak` 並加上 `類別 = '核能'`，關掉 RAG 反而答對）。
 所以準確率低主要不是 RAG 造成的——打開推理才是從 6 到 10 的那一步；但字元 n-gram 檢索只懂字面，換成語意檢索（例如本機的 `bge-m3` 向量）是下一個可改的地方。
-同一設定重跑一次答對數會差 1 題，20 題的差距要當量級看。報告：[有 RAG](../reports/llm_eval_ollama_rag.md)、[關 RAG](../reports/llm_eval_ollama_no_rag.md)，過程見 CP-094。
+同一設定重跑一次答對數會差 1 題，20 題的差距要當量級看。報告：[有 RAG](../reports/llm/llm_eval_ollama_rag.md)、[關 RAG](../reports/llm/llm_eval_ollama_no_rag.md)，過程見 CP-094。
 
 **真正卡住的是什麼？**逐次記下模型每一輪寫的 SQL 之後發現：模型收到錯誤常把**同一句 SQL 原樣再送一次**，三次重試寫出同一個 `LIMIT ?`、同一句 `縣市 = '高雄市'`，題目就這樣耗盡重試。這幾類錯的正確寫法是唯一的，所以改成在守門之前直接修好（[src/text2sql/sql_repair.py](../src/text2sql/sql_repair.py)）：`LIMIT ?` 填回整數、拿掉多送的空白參數、補上漏掉的 LIMIT、封閉集合欄位的說法換成資料裡的值（`燃煤`→`煤`、`高雄市`→`LIKE '高雄市%'`、`風力`→`LIKE '%風力'`）；對法不只一種時不猜，照舊退回給模型。另外放行算日期差的 `julianday`，問「各／每」時分組後只回 1 筆也當成截斷，規則說明補上「數機組查 `v_unit`」「問幾個要用 COUNT」。
 
@@ -81,8 +81,8 @@
 
 修正在新題目上一樣有效（3 → 9，沒有回答 4 → 0），但答對率是 45%，不是 75%：**本機 8B 模型在規則接不住的題目上大約對一半**，
 15/20 是照著那份題庫修過的成績。錯的多半是理解題意：問「有幾座」卻列清單、問「各有幾部」只回一個總數、自己多加條件。
-`uv run --extra local python -m eval.llm_eval --questions holdout`；報告：[現在](../reports/llm_eval_ollama_holdout.md)、
-[修正前](../reports/llm_eval_ollama_holdout_before_repair.md)，過程見 CP-100。這份題庫之後也不該拿來調整，否則就失去意義。
+`uv run --extra local python -m eval.llm_eval --questions holdout`；報告：[現在](../reports/llm/llm_eval_ollama_holdout.md)、
+[修正前](../reports/llm/llm_eval_ollama_holdout_before_repair.md)，過程見 CP-100。這份題庫之後也不該拿來調整，否則就失去意義。
 
 **錯的真的是「理解題意」嗎？**（CP-102）把上面兩份題庫剩下的錯逐題攤開，大半其實是**答案形狀**不對，
 不是 SQL 寫壞：問「有幾座」卻列出清單、問「各有幾部」只回一個總數、問「哪些電廠」一部機組一列、
@@ -110,8 +110,8 @@
 剩下 6 題：2 題是問「幾座電廠」卻寫 `COUNT(*)`（數成機組）；「第三多」只取第一名；「每座電廠最近一次」沒分組；
 「同時有重油和輕柴油」寫成 `燃料 = ? AND 燃料 = ?`；「對不到主檔的歲修」重試用完仍沒有能執行的 SQL（`GENERATION_FAILED`）。
 第一類看起來也能用程式改，但它是從這份成績題庫看到的；照它改之前要再寫一份新題庫，否則 27 題也失去意義。
-`uv run --extra local python -m eval.llm_eval --questions fresh`；報告：[現在](../reports/llm_eval_ollama_fresh_shape.md)、
-[重跑](../reports/llm_eval_ollama_fresh_shape_run2.md)、[修正前](../reports/llm_eval_ollama_fresh_before_shape.md)，過程見 CP-102。
+`uv run --extra local python -m eval.llm_eval --questions fresh`；報告：[現在](../reports/llm/llm_eval_ollama_fresh_shape.md)、
+[重跑](../reports/llm/llm_eval_ollama_fresh_shape_run2.md)、[修正前](../reports/llm/llm_eval_ollama_fresh_before_shape.md)，過程見 CP-102。
 
 **照 27 題的錯再修一輪**（CP-103）。上面剩下的四類加上 holdout／main 退步的兩題（模型自己編了一座電廠、一個縣市）
 都能用程式改：`COUNT(*)` 改成 `COUNT(DISTINCT 電廠)`、第 N 名補 `OFFSET`、「每座電廠…」按電廠分組（「每…最…」改成每組 MAX／MIN）、
@@ -133,8 +133,8 @@
 3 題整句寫偏（只有一部機組的電廠、每種能源別幾座場站、每座風力場站最近一年）、「幾種燃料」數成機組、
 「總裝置容量超過 200 萬瓩」比成單機、多加日期範圍、`ambiguous` 填成 `unmatched`、「原因寫著大修」用 `=` 而不是 LIKE。
 其中 `LIMIT 1` 那題看起來也能改，但同樣要先另寫題庫；其餘多半真的要理解題意。
-`uv run --extra local python -m eval.llm_eval --questions fresh2`；報告：[現在](../reports/llm_eval_ollama_fresh2_gaps.md)、
-[重跑](../reports/llm_eval_ollama_fresh2_gaps_run2.md)、[修正前](../reports/llm_eval_ollama_fresh2_before.md)，過程見 CP-103。
+`uv run --extra local python -m eval.llm_eval --questions fresh2`；報告：[現在](../reports/llm/llm_eval_ollama_fresh2_gaps.md)、
+[重跑](../reports/llm/llm_eval_ollama_fresh2_gaps_run2.md)、[修正前](../reports/llm/llm_eval_ollama_fresh2_before.md)，過程見 CP-103。
 
 **模型自己加的條件**（CP-104）。fresh2 剩下的錯最常見的是模型加了問句沒提的條件：沒問時間卻加
 `開始日期 > '2025-01-01'`、問「各能源別幾座場站」卻加 `數值狀態 = 'ok' AND 能源別 = '地熱'`、
@@ -162,8 +162,8 @@ fresh2 的兩題「每個縣市…」標準答案按含鄉鎮的欄位分組，�
 
 28 題剩下的錯：查錯檢視（總裝置容量查到 v_peak）、沒有回答、`IS NULL` 漏了空字串、「幾個縣市」列成清單、
 單日寫成整月、「第三高」寫成 `LIMIT 3 OFFSET 2`、指定月份卻用整個資料期間。下一輪同樣要先寫新題庫。
-`uv run --extra local python -m eval.llm_eval --questions fresh3`；報告：[現在](../reports/llm_eval_ollama_fresh3_filters.md)、
-[重跑](../reports/llm_eval_ollama_fresh3_filters_run2.md)、[修正前](../reports/llm_eval_ollama_fresh3_before.md)，過程見 CP-104。
+`uv run --extra local python -m eval.llm_eval --questions fresh3`；報告：[現在](../reports/llm/llm_eval_ollama_fresh3_filters.md)、
+[重跑](../reports/llm/llm_eval_ollama_fresh3_filters_run2.md)、[修正前](../reports/llm/llm_eval_ollama_fresh3_before.md)，過程見 CP-104。
 
 **推理開重量**（CP-108）。CP-090 量推理開時還沒有 SQL 修正與答案形狀修正（20 題答對 10、7 題 900 秒寫不完）。
 所有修正合併後，用同一套程式、`--timeout 900` 重量兩份題庫，和推理關的現況並排：
@@ -180,9 +180,72 @@ fresh2 的兩題「每個縣市…」標準答案按含鄉鎮的欄位分組，�
 - **比修正前好很多**：main 從 10 到 14，每題中位數從約 6 分鐘降到 1～2 分鐘；修正程式對推理開一樣有效。
 - **兩份題庫都偏向推理關**：fresh3 與 main 的錯都是照推理關的輸出修的，推理開沒拿來調過，所以這是保守的比較。
 - 預設仍是推理關：慢 20 倍以上、有逾時；需要「寧可不答也不要答錯」時切到推理開。
-報告：[fresh3](../reports/llm_eval_ollama-reasoning_fresh3_reasoning.md)、[main](../reports/llm_eval_ollama-reasoning_reasoning_repaired.md)。
+報告：[fresh3](../reports/llm/llm_eval_ollama-reasoning_fresh3_reasoning.md)、[main](../reports/llm/llm_eval_ollama-reasoning_reasoning_repaired.md)。
 
-題庫有兩題「各縣市…」的標準答案原本按含鄉鎮的縣市欄位分組，與專案自己的規則相反，模型照錯法寫反而算對；CP-098 改成按縣市分組，第一輪的 13 是改正後的成績（用舊標準算是 14）。報告：[第二輪](../reports/llm_eval_ollama_repair_v2.md)、[第二輪重跑](../reports/llm_eval_ollama_repair_v2_run2.md)，過程見 CP-097～099。
+題庫有兩題「各縣市…」的標準答案原本按含鄉鎮的縣市欄位分組，與專案自己的規則相反，模型照錯法寫反而算對；CP-098 改成按縣市分組，第一輪的 13 是改正後的成績（用舊標準算是 14）。報告：[第二輪](../reports/llm/llm_eval_ollama_repair_v2.md)、[第二輪重跑](../reports/llm/llm_eval_ollama_repair_v2_run2.md)，過程見 CP-097～099。
+
+**這些差距是不是運氣？**（CP-111）每份題庫只有 26～28 題，所以用 `python -m eval.stats` 對同一份題庫的修正前後**逐題配對**：
+McNemar 精確檢定只看「一邊對、一邊錯」的題目，另外用配對 bootstrap（10,000 次）給準確率差的 95% 區間。
+
+| 當輪成績 | 修正前 → 後 | 只有修正前對／只有修正後對 | 準確率差（95% bootstrap） | McNemar p |
+|---|---:|---:|---|---:|
+| 第一輪（fresh，27 題） | 14 → 21 | 0 / 7 | +26%（+11%～+44%） | 0.016 |
+| 第二輪（fresh2，26 題） | 10 → 15 | 0 / 5 | +19%（+4%～+35%） | 0.062 |
+| 第三輪（fresh3，28 題） | 15 → 20 | 0 / 5 | +18%（+4%～+32%） | 0.062 |
+| 三輪合併 | 39 → 56 | 0 / 17 | — | 0.00002 |
+| 推理關 → 推理開（fresh3） | 20 → 25 | 1 / 6 | +18%（+0%～+36%） | 0.125 |
+
+- **單看第二、三輪，各自都不到 p < 0.05**：只改對 5 題，題數太少，單輪無法排除運氣。
+- **但三輪都沒有任何一題被改壞**（只有修正前對的題目是 0），合併 17 題全部同一方向，p ≈ 0.00002；修正有效這件事站得住，
+  每一輪「有多大效果」則只能說是量級。
+- 單份報告的準確率也很寬：fresh3 現在 20/28 = 71%，95% Wilson 區間 53%～85%。所以 README 寫「大約六到七成」而不是精確數字。
+- 推理開比推理關多對 5 題，但有 1 題反過來，p = 0.125，不能說推理開比較準；它真正的差別是答錯少（見上一節）。
+
+**為什麼是 qwen3:8b？多模型比較**（CP-115）。用 `python -m eval.compare_models` 把三個放得進 6 GB 顯示卡的本機模型
+放進同一條管線（同樣的檢索、守門、SQL 修正與答案形狀修正，推理關、temperature 0），五份題庫合計 121 題逐題配對：
+
+| 模型 | 答對（121 題） | 95% Wilson | 答錯 | 沒有回答 | 每題秒數（中位數） | 對 qwen3:8b：只有它對／只有該模型對 |
+|---|---:|---|---:|---:|---:|---|
+| `qwen3:8b`（預設） | **102**（84%） | 77%～90% | 15 | 4 | 12.8 | — |
+| `qwen2.5-coder:7b` | 92（76%） | 68%～83% | 16 | 13 | **2.1** | 21 / 11，p = 0.11 |
+| `qwen3:4b` | 67（55%） | 46%～64% | 39 | 15 | 1.0 | 44 / 9，p < 0.001 |
+
+- **qwen3:4b 明顯不夠**：少對 35 題，答錯 39 題（多半是看起來正常的錯答案），p < 0.001。
+- **qwen2.5-coder:7b 是真的對手**：少對 10 題但 p = 0.11，統計上分不出來；每題快 6 倍，因為 4.7 GB 整個放進顯示卡，
+  `qwen3:8b`（5.2 GB）有一部分落到 CPU。它失敗時比較常「沒有回答」（13 vs 4），答錯數則差不多。
+- **這個比較偏向 qwen3:8b**：五份題庫的錯誤與修正程式都是照它的輸出調的，其他模型沒被調過還能接近，代表差距可能更小。
+- **決定：預設維持 qwen3:8b**，答對最多、沒有回答最少；在乎延遲時可用 `OLLAMA_MODEL=qwen2.5-coder:7b`。
+  沒有放雲端模型當上限：專題刻意全程地端、不需要 API key。
+完整表格：[reports/llm/model_comparison.md](../reports/llm/model_comparison.md)。
+
+**檢索：字元 n-gram vs embedding**（CP-114）。長尾問句交給 LLM 前，會先找 5 個相近的範例放進 prompt。
+原本用字元 n-gram TF-IDF，它只懂字面；換成本機 embedding（Ollama 的 `bge-m3`）先單獨量檢索本身
+（`python -m eval.retrieval_eval`，golden＋eval 126 題，「相關」＝範例的 intent 與問句相同）：
+
+| 檢索方式 | Hit@1 | Hit@5 | Precision@5 | MRR |
+|---|---:|---:|---:|---:|
+| 字元 n-gram（原本） | 49.2% | 87.3% | 34.6% | 0.665 |
+| embedding（bge-m3） | **69.0%** | **93.7%** | **46.2%** | **0.797** |
+| hybrid（RRF 合併名次） | 65.9% | 92.9% | 41.8% | 0.771 |
+
+檢索本身明顯變好。但這只是中間指標，所以再用 `eval.llm_eval --retriever` 把五份題庫（121 題）端到端各跑一次，
+同一個 `qwen3:8b`、同樣的守門與修正，只換找範例的方式（RTX 3060 6 GB）：
+
+| 檢索方式 | 答對 | 300 秒逾時 | 每題秒數（中位數） | 排除逾時後，對 n-gram 的配對檢定 |
+|---|---:|---:|---:|---|
+| 字元 n-gram | **103**/121 | 0 | **7.1** | （基準） |
+| embedding | 96/121 | 6 | 36.8 | 115 題：只有 n-gram 對 12／只有 embedding 對 9，p = 0.66 |
+| hybrid | 84/121 | 23 | 73.2 | 98 題：8／9，p = 1.0 |
+
+- **檢索變準，答案沒有變準**：排除逾時的題目後兩邊幾乎打平，p 值遠大於 0.05。原因是 prompt 裡已經有完整的 schema、
+  欄位值清單與規則提示，範例只是輔助；而且 n-gram 的門檻早就把明顯無關的範例砍掉了。
+- **慢了 5～10 倍，還會逾時**：`bge-m3`（1.2 GB）加 `qwen3:8b`（5.2 GB）放不進 6 GB 顯示卡，Ollama 每題都要把模型換進換出；
+  hybrid 每題要算兩次，逾時最多。答對數的差距主要來自逾時，不是檢索品質。
+- **決定：預設維持字元 n-gram**。embedding／hybrid 的程式與快取留著（`configs/retriever.yaml` 的 `method` 或
+  `POWERQUERY_RETRIEVER` 切換），顯示卡夠放兩個模型、或語料大到字面比對不夠用時再換；連不上 embedding 時自動退回 n-gram，
+  離線模式一律 n-gram。
+- 教訓：**中間指標（Recall／MRR）變好不代表端到端變好**，要用最終任務配對量過才換。
+報告：[檢索評測](../reports/retrieval_eval.md)、端到端 `reports/llm/llm_eval_ollama_retriever_{ngram,embedding,hybrid}_*.md`。
 
 所以設計成**規則為主、本機 LLM 補位**，提供兩種模式：`POWERQUERY_LLM_PROVIDER=ollama`（推理關，預設；動手前寫好的 28 題答對 20）與
 `ollama-reasoning`（推理開，每題 1～2 分鐘；修正後 48 題答對數與推理關相同，但只答錯 1 題、8 題沒有回答）。LLM 寫的 SQL 一樣要過語法樹守門、語意守門與權限改寫，不是信任邊界。

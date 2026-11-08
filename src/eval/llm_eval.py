@@ -137,6 +137,7 @@ def evaluate(
     label: str | None = None,
     rag: bool = True,
     questions: Path = BENCHMARK,
+    retriever: str | None = None,
 ) -> dict[str, Any]:
     items = json.loads(questions.read_text(encoding="utf-8"))
     rule_hits = _rule_misses(database, items)
@@ -149,6 +150,7 @@ def evaluate(
         extra_body=extra_body,
         # 0 筆範例 = prompt 只剩 schema、欄位值與領域規則，用來單獨量檢索的效果。
         retrieval_top_k=None if rag else 0,
+        retrieval_method=retriever,
     )
     results: list[dict[str, Any]] = []
     for item in items:
@@ -194,6 +196,7 @@ def evaluate(
         "label": label,
         "extra_body": getattr(runtime.pipeline.llm, "extra_body", None),
         "rag": rag,
+        "retriever": retriever or "config",
         "questions_file": questions.name,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "questions": len(items),
@@ -286,8 +289,14 @@ def main(argv: list[str] | None = None) -> int:
             "fresh2／fresh3：CP-103／CP-104 的同一種題目"
         ),
     )
+    parser.add_argument(
+        "--retriever",
+        choices=["ngram", "embedding", "hybrid"],
+        default=None,
+        help="覆寫 retriever.yaml 的檢索方式，用來對照 embedding 檢索對準確率的影響",
+    )
     parser.add_argument("--database", type=Path, default=PROJECT_ROOT / "data/processed/power.db")
-    parser.add_argument("--out", type=Path, default=PROJECT_ROOT / "reports")
+    parser.add_argument("--out", type=Path, default=PROJECT_ROOT / "reports" / "llm")
     args = parser.parse_args(argv)
     report = evaluate(
         args.provider,
@@ -298,6 +307,7 @@ def main(argv: list[str] | None = None) -> int:
         label=args.label,
         rag=not args.no_rag,
         questions=QUESTION_SETS[args.questions],
+        retriever=args.retriever,
     )
     json_path, markdown_path = write_reports(report, args.out)
     print(

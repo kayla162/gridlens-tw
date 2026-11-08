@@ -1,3 +1,11 @@
+# 長尾問句交給本機 LLM 之前，用哪一種方式找範例放進 prompt：
+#   ngram      字元 n-gram TF-IDF（預設；不需要任何模型）
+#   embedding  本機 Ollama 的 embedding 模型（下方 embedding 段），語料向量快取在 data/processed/
+#   hybrid     兩者的名次用 Reciprocal Rank Fusion 合併
+# 環境變數 POWERQUERY_RETRIEVER 優先於這裡。離線模式一律用 ngram；embedding 連不上時自動退回 ngram。
+# 選擇依據見 docs/LLM_EVALUATION.md「檢索：字元 n-gram vs embedding」（CP-114）：檢索指標變好，端到端答對數沒有變、每題慢 5～10 倍。
+method: ngram
+
 top_k: 5
 # 檢索門檻。實測走到檢索的 27 題、135 個範例對：意圖相符的分數中位數 0.118（最高
 # 0.462），不相符的中位數 0.053（最高 0.303）—— 兩個分佈重疊，沒有任何門檻切得開。
@@ -12,3 +20,12 @@ character_ngram:
   min: 2
   max: 4
 
+
+embedding:
+  model: bge-m3
+  base_url: http://127.0.0.1:11434
+  timeout_seconds: 60
+  # bge-m3 的 cosine 尺度和 n-gram 不同，門檻另外校準（golden＋eval 126 題、前 5 名）：
+  #   相符的分數中位數 0.65、不符 0.60，分佈一樣重疊；min 0.5 ＋ relative 0.8 純度 46% → 51%，只有 1 題沒範例。
+  min_score: 0.5
+  relative_score: 0.8

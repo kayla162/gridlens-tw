@@ -8,15 +8,18 @@
 > are answered by deterministic rules first; the long tail goes to a local LLM (Ollama, `qwen3:8b`). Every query passes an
 > AST-based SQL guard and a semantic guard. I built a local LLM evaluation in which every round of fixes is scored on a
 > question set written before the changes, plus SQL and answer-shape repairs: the latest round went from 15/28 to 20/28
-> (earlier rounds: 14/27 to 21/27, 10/26 to 15/26). I also built a 10-minute realtime generation collector, dashboard and
+> (earlier rounds: 14/27 to 21/27, 10/26 to 15/26), with McNemar tests and Wilson intervals. A paired comparison of three local models (121 questions) and of n-gram vs bge-m3 embedding retrieval backs the defaults: embedding retrieval lifts Hit@1 from 49% to 69% but not end-to-end accuracy. A Docker image runs the rules-only demo. I also built a 10-minute realtime generation collector, dashboard and
 > query path.
 
 ![Python](https://img.shields.io/badge/Python-3.12-3776ab)
 ![Local LLM](https://img.shields.io/badge/LLM-Ollama%20qwen3%3A8b%20(local)-1a5fb4)
-![Tests](https://img.shields.io/badge/tests-1%2C376%20passing-2e7d32)
+![Tests](https://img.shields.io/badge/tests-1%2C398%20passing-2e7d32)
 ![License](https://img.shields.io/badge/license-MIT-14498c)
 
-![GridLens TW 查詢中心：問「2026年7月20日出力前五名機組」，回 5 筆結果、類別比較長條圖與明細表](readme_pic.png)
+![GridLens TW 展示：依序問「2026年7月20日出力前五名機組」「2025年台灣太陽能發了多少度？」「台中一號機去年尖峰出力總和」，分別得到查詢結果與圖表、資料涵蓋範圍的說明、以及語意守門的拒答](docs/media/demo.gif)
+
+> 自己試：`docker build -t gridlens-tw . && docker run --rm -p 8000:8000 gridlens-tw`，開 <http://127.0.0.1:8000/>（只用規則、不需要模型）。
+> 部署到 Render／Hugging Face Spaces 見 [docs/DEPLOY.md](docs/DEPLOY.md)。
 
 ## 重點
 
@@ -26,10 +29,10 @@
 | 安全 | SQL 攻擊題 16／16 攔截、正常問題 0／20 誤攔；SQL 以語法樹檢查，權限在後端改寫 |
 | 本機 LLM（規則答不出的長尾） | 每輪先寫新題庫再修：最新一輪 15 → **20／28**，兩次重跑相同；最早一份沒調過的題庫從 3／20 起步 |
 | 即時資料 | 每 10 分鐘收集台電 204 個機組的發電量，先封存再入庫，壞了能從封存重建 |
-| 工程品質 | 1,376 項測試、CI 全程離線；每個改動都有可回退的紀錄（[log.md](log.md)） |
+| 工程品質 | 1,398 項測試、CI 全程離線（含 Docker 映像建置與冒煙測試）；每個改動都有可回退的紀錄（[log.md](log.md)） |
 
-**技術**：Python、FastAPI、SQLite、sqlglot、Ollama（本機 LLM）、RAG（自寫字元 n-gram 檢索）、LLM guardrails、
-評測設計（對照實驗、held-out 題庫）、pytest、GitHub Actions。
+**技術**：Python、FastAPI、SQLite、sqlglot、Ollama（本機 LLM）、RAG（字元 n-gram／bge-m3 embedding／RRF hybrid 檢索）、
+LLM guardrails、評測設計（對照實驗、held-out 題庫、多模型比較、McNemar 與 bootstrap 檢定）、pytest、Docker、GitHub Actions。
 
 ## 基於原專題的深度開發
 
@@ -101,15 +104,30 @@ flowchart LR
 | 第二輪找錯誤用的 20 題（[held-out](benchmarks/llm_holdout_questions.json)） | 3 | 9 | 16 | 16 | 17 |
 | 第一輪找錯誤用的 20 題（[llm_questions](benchmarks/llm_questions.json)） | 5 | 15 | 17 | 18 | 18 |
 
-學到的五件事：
+**為什麼用 qwen3:8b？** 同一條管線、同樣的守門與修正，三個放得進 6 GB 顯示卡的本機模型在五份題庫（121 題）上逐題配對
+（[比較表](reports/llm/model_comparison.md)，`python -m eval.compare_models`）：
+
+| 模型 | 答對（121 題） | 95% Wilson | 答錯 | 沒有回答 | 每題秒數（中位數） | 對 qwen3:8b：只有它對／只有該模型對 |
+|---|---:|---|---:|---:|---:|---|
+| `qwen3:8b`（預設） | **102**（84%） | 77%～90% | 15 | 4 | 12.8 | — |
+| `qwen2.5-coder:7b` | 92（76%） | 68%～83% | 16 | 13 | **2.1** | 21 / 11，p = 0.11 |
+| `qwen3:4b` | 67（55%） | 46%～64% | 39 | 15 | 1.0 | 44 / 9，p < 0.001 |
+
+qwen2.5-coder:7b 快 6 倍、差距在統計上不顯著，是延遲優先時的選項；qwen3:4b 明顯不夠。題庫是照 qwen3:8b 的錯修的，比較偏向它。
+
+學到的六件事：
 
 1. **推理開不是比較準，而是比較少答錯**：修正之前推理開答對較多（10 vs 6）；所有修正合併後重量 48 題，兩者都答對 39，
    但推理關答錯 8、推理開只答錯 1（其餘是逾時沒有回答），每題卻慢 20 倍以上。所以預設關、需要時可切換。
 2. **RAG 不是準確率低的原因**：關掉檢索範例總分不變，但有 7 題結果互換；字面相似的範例會把模型帶偏。
+   換成本機 embedding（bge-m3）後檢索的 Hit@1 從 49% 升到 69%、MRR 0.665 → 0.797，**端到端答對數卻沒有變**
+   （121 題配對檢定 p = 0.66），每題還慢 5～10 倍（兩個模型放不進 6 GB 顯示卡），所以預設仍用 n-gram。
 3. **能用程式改好的錯就直接改**：8B 模型被退回時常原樣再送，退回請它改幾乎沒用；修正程式只處理寫法唯一的錯。
 4. **很多「理解題意」的錯其實是答案形狀錯**：問「有幾座」卻列清單、問「各」卻只回總數，問句說得夠清楚時程式改得好。
 5. **照錯誤修過的題庫不能當成績**：同一套程式，修過的題庫 26/27，新寫的只有 15/26。所以每一輪都先寫新題庫，
    在新題庫上發現的程式 bug 也是量完成績之後才修、不算分。
+6. **小題庫要檢定**：每輪只改對 5～7 題，單看第二、三輪 McNemar p = 0.062，不能排除運氣；但三輪合計 17 題改對、
+   0 題改壞，p ≈ 0.00002。單份 28 題的準確率 95% 區間寬達 53%～85%，所以只說「大約六到七成」。
 
 結論是**本機 8B 模型在規則答不出、沒調過的題目上大約答對六到七成**：三輪的成績分別是 21/27、15/26、20/28，
 每份題庫難度差很多。剩下的錯多半真的要理解題意（查錯檢視、單日寫成整月、指定月份卻用整個資料期間）。
@@ -146,6 +164,9 @@ uv run powerquery "2026年7月備轉容量率最低是哪一天？"
 make test-all && make eval                   # 全套測試與離線評測
 ```
 
+**Docker**（公開展示用，只跑規則）：`docker build -t gridlens-tw . && docker run --rm -p 8000:8000 gridlens-tw`，
+細節與 Render／Hugging Face Spaces 部署見 [docs/DEPLOY.md](docs/DEPLOY.md)。其他 Windows 啟動檔在 `scripts/windows/`。
+
 程式內部沿用原專案名稱：指令 `powerquery`、環境變數 `POWERQUERY_*`。帳號、執行模式與資料管理見 [docs/SERVING.md](docs/SERVING.md)。
 
 ## 文件
@@ -153,9 +174,10 @@ make test-all && make eval                   # 全套測試與離線評測
 | 想知道 | 看這裡 |
 |---|---|
 | 設計與踩過的坑 | [SPEC](docs/SPEC.md)、[log.md](log.md)（每一步的決定、驗證與回退方式） |
-| 本機 LLM 評測 | [LLM_EVALUATION](docs/LLM_EVALUATION.md)、[評測](docs/EVALUATION.md)、[Text2SQL 管線](docs/TEXT2SQL_PIPELINE.md) |
+| 本機 LLM 評測 | [LLM_EVALUATION](docs/LLM_EVALUATION.md)、[評測](docs/EVALUATION.md)、[Text2SQL 管線](docs/TEXT2SQL_PIPELINE.md)、[報告索引](reports/llm/README.md) |
+| 部署 | [DEPLOY](docs/DEPLOY.md)（Docker、Render、Hugging Face Spaces） |
 | 守門 | [語意守門](docs/SEMANTIC_GUARD.md)、[系統卡](docs/SYSTEM_CARD.md) |
-| 即時發電 | [來源分析](docs/REALTIME_INGEST.md)、[收集器規格](docs/superpowers/specs/2026-09-24-realtime-ingest-design.md) |
+| 即時發電 | [來源分析](docs/REALTIME_INGEST.md)、[收集器規格](docs/design/2026-09-24-realtime-ingest-design.md) |
 | 操作與 API | [SERVING](docs/SERVING.md)、[API 契約](src/serving/API_CONTRACT.md)、[公開服務](PUBLIC_OFFLINE_SERVING.md) |
 | 資料 | [資料字典](docs/DATA_DICTIONARY.md)、[對齊方法](taipower_align/README.md) |
 
