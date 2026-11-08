@@ -13,7 +13,7 @@
 
 ![Python](https://img.shields.io/badge/Python-3.12-3776ab)
 ![Local LLM](https://img.shields.io/badge/LLM-Ollama%20qwen3%3A8b%20(local)-1a5fb4)
-![Tests](https://img.shields.io/badge/tests-1%2C398%20passing-2e7d32)
+![Tests](https://img.shields.io/badge/tests-1%2C408%20passing-2e7d32)
 ![License](https://img.shields.io/badge/license-MIT-14498c)
 
 ![GridLens TW 展示：依序問「2026年7月20日出力前五名機組」「2025年台灣太陽能發了多少度？」「台中一號機去年尖峰出力總和」，分別得到查詢結果與圖表、資料涵蓋範圍的說明、以及語意守門的拒答](docs/media/demo.gif)
@@ -29,10 +29,10 @@
 | 安全 | SQL 攻擊題 16／16 攔截、正常問題 0／20 誤攔；SQL 以語法樹檢查，權限在後端改寫 |
 | 本機 LLM（規則答不出的長尾） | 每輪先寫新題庫再修：最新一輪 15 → **20／28**，兩次重跑相同；最早一份沒調過的題庫從 3／20 起步 |
 | 即時資料 | 每 10 分鐘收集台電 204 個機組的發電量，先封存再入庫，壞了能從封存重建 |
-| 工程品質 | 1,398 項測試、CI 全程離線（含 Docker 映像建置與冒煙測試）；每個改動都有可回退的紀錄（[log.md](log.md)） |
+| 工程品質 | 1,408 項測試、CI 全程離線（含 Docker 映像建置與冒煙測試）；每個改動都有可回退的紀錄（[log.md](log.md)） |
 
 **技術**：Python、FastAPI、SQLite、sqlglot、Ollama（本機 LLM）、RAG（字元 n-gram／bge-m3 embedding／RRF hybrid 檢索）、
-LLM guardrails、評測設計（對照實驗、held-out 題庫、多模型比較、McNemar 與 bootstrap 檢定）、pytest、Docker、GitHub Actions。
+LLM guardrails、評測設計（對照實驗、held-out 題庫、多模型比較、McNemar 與 bootstrap 檢定）、MCP（Model Context Protocol）、pytest、Docker、GitHub Actions。
 
 ## 基於原專題的深度開發
 
@@ -137,6 +137,12 @@ qwen2.5-coder:7b 快 6 倍、差距在統計上不顯著，是延遲優先時的
 uv run --extra local python -m eval.llm_eval --questions fresh3   # 需要先開 Ollama
 ```
 
+## 給 AI 代理用：MCP server
+
+`python -m serving.mcp_server` 把查詢開成 [MCP](https://modelcontextprotocol.io) 工具，Claude Desktop／Claude Code 可以在對話中直接問台電資料。
+工具**只收中文問題、不收 SQL**，代理的問題走同一條規則、語意守門與語法樹守門，沒有繞過的路；三個工具都標成唯讀。
+設定與設計見 [docs/MCP.md](docs/MCP.md)。
+
 ## 即時發電
 
 ![GridLens TW 即時發電面板：綠燈與最新時段、各類型淨發電量與裝置容量、通訊異常機組數，以及今日每 10 分鐘的各類型出力趨勢](readme_realtime.png)
@@ -176,6 +182,7 @@ make test-all && make eval                   # 全套測試與離線評測
 | 設計與踩過的坑 | [SPEC](docs/SPEC.md)、[log.md](log.md)（每一步的決定、驗證與回退方式） |
 | 本機 LLM 評測 | [LLM_EVALUATION](docs/LLM_EVALUATION.md)、[評測](docs/EVALUATION.md)、[Text2SQL 管線](docs/TEXT2SQL_PIPELINE.md)、[報告索引](reports/llm/README.md) |
 | 部署 | [DEPLOY](docs/DEPLOY.md)（Docker、Render、Hugging Face Spaces） |
+| 給 AI 代理用 | [MCP](docs/MCP.md)（Claude Desktop／Claude Code 設定、工具與安全設計） |
 | 守門 | [語意守門](docs/SEMANTIC_GUARD.md)、[系統卡](docs/SYSTEM_CARD.md) |
 | 即時發電 | [來源分析](docs/REALTIME_INGEST.md)、[收集器規格](docs/design/2026-09-24-realtime-ingest-design.md) |
 | 操作與 API | [SERVING](docs/SERVING.md)、[API 契約](src/serving/API_CONTRACT.md)、[公開服務](PUBLIC_OFFLINE_SERVING.md) |
