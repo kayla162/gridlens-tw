@@ -36,7 +36,7 @@ LLM guardrails、評測設計（對照實驗、held-out 題庫、多模型比較
 
 ## 基於原專題的深度開發
 
-本專案基於原專題 [lee851104/text2sql_project](https://github.com/lee851104/text2sql_project) 進行深度開發。
+基於 [lee851104/text2sql_project](https://github.com/lee851104/text2sql_project) 延伸開發。
 原專題提供了資料對齊、Text2SQL 管線、雙層守門、帳號權限與資料治理的基礎；下面是在它之上新增或重寫的部分，
 commit 紀錄都查得到。
 
