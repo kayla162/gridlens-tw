@@ -22,12 +22,15 @@ dependencies = [
 local = ["openai>=1.100,<3"]
 dev = [
     "httpx2>=2.12,<3",
+    "mcp>=1.10,<2",
     "pytest>=8,<10",
     "ruff>=0.12,<1",
 ]
+mcp = ["mcp>=1.10,<2"]
 
 [project.scripts]
 powerquery = "cli:main"
+gridlens-mcp = "serving.mcp_server:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

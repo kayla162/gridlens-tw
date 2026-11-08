@@ -2,6 +2,23 @@
 
 > 這份檔案在每個可驗證、可回退的儲存點更新。回退前需保留使用者原有的未提交變更。
 
+## CP-116 — MCP server：讓 AI 代理用中文查台電資料
+
+- 時間：2026-11-08 +08:00
+- 狀態：已完成
+- 分支：`feat/mcp-server`（從 `feat/portfolio-gaps` 分出）
+- 起點：系統只能從網頁、REST API 與 CLI 用；代理（Claude Desktop／Claude Code）沒有標準的接法。
+- 變更：
+  - `src/serving/mcp_server.py`：官方 MCP Python SDK（FastMCP，stdio），三個唯讀工具
+    `query_power_data(question)`、`describe_data_coverage()`、`list_example_questions()`。
+    **只收中文問題、不收 SQL**，走和網頁同一條管線與守門；不開原始檔與管理介面。結果最多 50 列並回報完整筆數，
+    附 SQL、資料限制與 `answered_by`。runtime 在第一次查詢時才建立；模式跟 `POWERQUERY_RUNTIME_MODE` 或 `--mode`。
+  - `pyproject.toml`：新增 `mcp` extra（dev 也帶，讓 CI 跑協定測試）與 `gridlens-mcp` 指令；`docs/MCP.md`、README 段落。
+- 驗證：`tests/test_mcp_server.py` 10 題，以 in-memory transport 走真的協定；以 stdio 子行程實際連線，
+  規則題、語意守門拒答、交給本機 LLM 的長尾題都正確回傳（長尾題 qwen3:8b 把「同時有」寫成 OR，照實記在 docs/MCP.md）。
+  全套 1,408 項通過、ruff 通過。
+- 回退方式：`git revert` 本次 commit；不影響網頁與 CLI。
+
 ## CP-115 — 本機模型比較：qwen3:8b vs qwen3:4b vs qwen2.5-coder:7b
 
 - 時間：2026-11-08 +08:00
