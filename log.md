@@ -2,6 +2,22 @@
 
 > 這份檔案在每個可驗證、可回退的儲存點更新。回退前需保留使用者原有的未提交變更。
 
+## CP-115 — 本機模型比較：qwen3:8b vs qwen3:4b vs qwen2.5-coder:7b
+
+- 時間：2026-11-08 +08:00
+- 狀態：已完成
+- 分支：`feat/portfolio-gaps`
+- 起點：一直只用 `qwen3:8b`，答不出「為什麼選這個模型」。
+- 變更：
+  - `src/eval/compare_models.py`：`run` 對每個模型跑五份題庫（qwen3 系列關推理），記錄 Ollama `/api/ps` 的顯示卡記憶體；
+    `summarize` 產生 `reports/llm/model_comparison.md`：合計答對、Wilson 區間、答錯／沒有回答、秒數中位數，
+    並以第一個模型為基準做合併 McNemar 配對檢定。缺報告時拒絕產表。
+  - `docs/LLM_EVALUATION.md`「為什麼是 qwen3:8b？」一節；README 加比較表、GIF、Docker、檢索與顯著性結果，更新路徑與測試數。
+- 結果（121 題）：qwen3:8b 102、qwen2.5-coder:7b 92（p = 0.11，每題 2.1 秒 vs 12.8 秒）、qwen3:4b 67（p < 0.001）。
+  預設維持 qwen3:8b；雲端上限模型沒做（專題全程地端，也沒有 API key）。
+- 驗證：`tests/test_compare_models.py` 3 題；全套測試、ruff、`git diff --check` 通過。
+- 回退方式：`git revert` 本次 commit；不影響執行期行為。
+
 ## CP-114 — embedding 檢索與端到端比較：預設維持字元 n-gram
 
 - 時間：2026-11-08 +08:00
